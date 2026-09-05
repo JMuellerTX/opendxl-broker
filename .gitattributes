@@ -1,0 +1,7 @@
+# Everything under dxlbroker/ is copied into the Docker image (entrypoint
+# scripts, configuration templates, policy files) and must keep LF line
+# endings: a CRLF shebang makes the entrypoint fail with "no such file", a
+# CRLF in dxlbroker.conf.tmpl puts a carriage return into the broker
+# identifier and the generated certificate subjects.
+*.sh text eol=lf
+dxlbroker/** text eol=lf
