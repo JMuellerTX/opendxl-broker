@@ -2,7 +2,7 @@
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 DOCKERFILE_TEMPLATE="$DIR/Dockerfile.template"
-DEB_STRETCH_SLIM_DOCKERFILE="$DIR/../Dockerfile"
+DEB_SLIM_DOCKERFILE="$DIR/../Dockerfile"
 RH_UBI_DOCKERFILE="$DIR/redhat-ubi/Dockerfile"
 
 #
@@ -17,62 +17,52 @@ function fail() {
 }
 
 #
-# Debian stretch-slim
+# Debian bookworm-slim
 #
-yes | cp -f $DOCKERFILE_TEMPLATE $DEB_STRETCH_SLIM_DOCKERFILE \
-    || { fail 'Error copying template (deb stretch slim).'; }
-sed -i "s,@BUILDER_IMAGE@,debian:stretch-slim,g" $DEB_STRETCH_SLIM_DOCKERFILE \
-    || { fail 'Error setting builder image (deb stretch slim).'; }
+yes | cp -f $DOCKERFILE_TEMPLATE $DEB_SLIM_DOCKERFILE \
+    || { fail 'Error copying template (deb bookworm slim).'; }
+sed -i "s,@BUILDER_IMAGE@,debian:bookworm-slim,g" $DEB_SLIM_DOCKERFILE \
+    || { fail 'Error setting builder image (deb bookworm slim).'; }
 INSTALL_BUILDER_PACKAGES='apt-get update -y \\\n'\
-'    \&\& apt-get install -y libssl1.0-dev libboost-dev cmake uuid-dev wget build-essential'
-sed -i "s,@INSTALL_BUILDER_PACKAGES@,$INSTALL_BUILDER_PACKAGES,g" $DEB_STRETCH_SLIM_DOCKERFILE \
-    || { fail 'Error setting builder packages (deb stretch slim).'; }
-sed -i "s,@BROKER_IMAGE@,debian:stretch-slim,g" $DEB_STRETCH_SLIM_DOCKERFILE \
-    || { fail 'Error setting broker image (deb stretch slim).'; }
+'    \&\& apt-get install -y --no-install-recommends libssl-dev libboost-dev cmake uuid-dev wget ca-certificates \\\n'\
+'        build-essential git python3 python3-venv'
+sed -i "s,@INSTALL_BUILDER_PACKAGES@,$INSTALL_BUILDER_PACKAGES,g" $DEB_SLIM_DOCKERFILE \
+    || { fail 'Error setting builder packages (deb bookworm slim).'; }
+sed -i "s,@BROKER_IMAGE@,debian:bookworm-slim,g" $DEB_SLIM_DOCKERFILE \
+    || { fail 'Error setting broker image (deb bookworm slim).'; }
 INSTALL_BROKER_PACKAGES='apt-get update -y \\\n'\
-'    \&\& apt-get install -y libssl1.0 wget uuid-runtime python iproute2 procps \\\n'\
+'    \&\& apt-get install -y --no-install-recommends libssl3 openssl ca-certificates wget uuid-runtime \\\n'\
+'        python3 python3-venv iproute2 procps adduser \\\n'\
 '    \&\& apt-get clean \\\n'\
 '    \&\& rm -rf /var/lib/apt/lists/*'
-sed -i "s,@INSTALL_BROKER_PACKAGES@,$INSTALL_BROKER_PACKAGES,g" $DEB_STRETCH_SLIM_DOCKERFILE \
-    || { fail 'Error setting broker packages (deb stretch slim).'; }
-INSTALL_PIP='\n# Install Python PIP\n'\
-'RUN wget -O get-pip.py '"'https://bootstrap.pypa.io/get-pip.py'"' \\\n'\
-'    \&\& python get-pip.py --disable-pip-version-check --no-cache-dir \\\n'\
-'    \&\& rm -f get-pip.py \\\n'\
-'    \&\& cp -f /usr/local/bin/pip2 /usr/local/bin/pip \\\n'\
-'    \&\& pip install dxlconsole==${DXL_CONSOLE_VERSION}\n'
-sed -i "s,@INSTALL_PIP@,$INSTALL_PIP,g" $DEB_STRETCH_SLIM_DOCKERFILE \
-    || { fail 'Error setting install pip (deb stretch slim).'; }
-sed -i "s,@ADD_USER@,adduser --home /dxlbroker --disabled-password --gecos \"\" dxl,g" $DEB_STRETCH_SLIM_DOCKERFILE \
-    || { fail 'Error setting add user (deb stretch slim).'; }
-sed -i "s,@INSTALL_DOC_PACKAGES@,apt-get -y install flex bison python3 doxygen,g" $DEB_STRETCH_SLIM_DOCKERFILE \
-    || { fail 'Error setting doc packages (deb stretch slim).'; }
+sed -i "s,@INSTALL_BROKER_PACKAGES@,$INSTALL_BROKER_PACKAGES,g" $DEB_SLIM_DOCKERFILE \
+    || { fail 'Error setting broker packages (deb bookworm slim).'; }
+sed -i "s,@ADD_USER@,adduser --home /dxlbroker --disabled-password --gecos \"\" dxl,g" $DEB_SLIM_DOCKERFILE \
+    || { fail 'Error setting add user (deb bookworm slim).'; }
+sed -i "s,@INSTALL_DOC_PACKAGES@,apt-get -y install --no-install-recommends flex bison doxygen,g" $DEB_SLIM_DOCKERFILE \
+    || { fail 'Error setting doc packages (deb bookworm slim).'; }
 
 #
-# RedHat UBI
+# RedHat UBI 9
 #
 yes | cp -f $DOCKERFILE_TEMPLATE $RH_UBI_DOCKERFILE \
     || { fail 'Error copying template (RedHat UBI).'; }
-sed -i "s,@BUILDER_IMAGE@,centos:8,g" $RH_UBI_DOCKERFILE \
+sed -i "s,@BUILDER_IMAGE@,quay.io/centos/centos:stream9,g" $RH_UBI_DOCKERFILE \
     || { fail 'Error setting builder image (RedHat UBI).'; }
-INSTALL_BUILDER_PACKAGES='yum group install -y "Development Tools" \\\n'\
-'    \&\& yum install -y openssl-devel boost-devel cmake libuuid-devel wget'
+INSTALL_BUILDER_PACKAGES='dnf group install -y "Development Tools" \\\n'\
+'    \&\& dnf install -y openssl-devel boost-devel cmake libuuid-devel wget git python3 python3-pip'
 sed -i "s,@INSTALL_BUILDER_PACKAGES@,$INSTALL_BUILDER_PACKAGES,g" $RH_UBI_DOCKERFILE \
     || { fail 'Error setting builder packages (RedHat UBI).'; }
-sed -i "s,@BROKER_IMAGE@,registry.redhat.io/ubi8/ubi-minimal:latest,g" $RH_UBI_DOCKERFILE \
+sed -i "s,@BROKER_IMAGE@,registry.access.redhat.com/ubi9/ubi-minimal:latest,g" $RH_UBI_DOCKERFILE \
     || { fail 'Error setting broker image (RedHat UBI).'; }
-INSTALL_BROKER_PACKAGES='microdnf install -y shadow-utils util-linux wget python2-pip openssl procps-ng uuid libuuid iproute \\\n'\
-'    \&\& alternatives --set python /usr/bin/python2 \\\n'\
-'    \&\& pip2 install dxlconsole==${DXL_CONSOLE_VERSION}'
+INSTALL_BROKER_PACKAGES='microdnf install -y shadow-utils util-linux wget python3 openssl ca-certificates procps-ng uuid libuuid iproute \\\n'\
+'    \&\& microdnf clean all'
 sed -i "s,@INSTALL_BROKER_PACKAGES@,$INSTALL_BROKER_PACKAGES,g" $RH_UBI_DOCKERFILE \
     || { fail 'Error setting broker packages (RedHat UBI).'; }
-INSTALL_PIP=''
-sed -i "s,@INSTALL_PIP@,$INSTALL_PIP,g" $RH_UBI_DOCKERFILE \
-    || { fail 'Error setting install pip (RedHat UBI).'; }
 sed -i "s,@ADD_USER@,useradd -d /dxlbroker -c \"\" dxl,g" $RH_UBI_DOCKERFILE \
     || { fail 'Error setting add user (RedHat UBI).'; }
 INSTALL_DOC_PACKAGES='dnf install -y '"'dnf-command(config-manager)'"' \\\n'\
-'    \&\& yum config-manager --set-enabled PowerTools \\\n'\
-'    \&\& yum -y install flex bison python3 doxygen'
+'    \&\& dnf config-manager --set-enabled crb \\\n'\
+'    \&\& dnf -y install flex bison doxygen'
 sed -i "s,@INSTALL_DOC_PACKAGES@,$INSTALL_DOC_PACKAGES,g" $RH_UBI_DOCKERFILE \
     || { fail 'Error setting doc packages (RedHat UBI).'; }

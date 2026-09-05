@@ -2,8 +2,19 @@
 # Compile Broker
 ###############################################################################
 
-FROM @BUILDER_IMAGE@ as builder
+FROM @BUILDER_IMAGE@ AS builder
 ARG build_docs=false
+
+# The OpenDXL Python client used by the embedded console. The PyPI release
+# (5.6.0.x) pins msgpack<1.0 (vulnerable, GHSA-6v7p-g79w-8964) and does not
+# start on current Python versions; override with a pip requirement
+# specifier once a fixed release is published.
+ARG DXL_CLIENT_PIP_SPEC="git+https://github.com/derjochenmueller/opendxl-client-python@epo-legacy"
+# The OpenDXL console. The PyPI release (0.3.3) fails on Python 3 when
+# started with the broker identifier and when generating provisioning
+# packages; override with a pip requirement specifier (e.g. dxlconsole==x.y.z)
+# once a fixed release is published.
+ARG DXL_CONSOLE_PIP_SPEC="git+https://github.com/derjochenmueller/opendxl-console@master"
 
 # Packages (OpenSSL, Boost)
 RUN @INSTALL_BUILDER_PACKAGES@
@@ -33,13 +44,19 @@ RUN cd /tmp \
     && tar xvzf v3.1-stable-opendxl-4.tar.gz \
     && cd libwebsockets-3.1-stable-opendxl-4 \
     && cmake -DCMAKE_BUILD_TYPE=release -DLWS_IPV6=On -DLWS_WITH_STATIC=ON \
-        -DLWS_WITH_SHARED=OFF -DLWS_WITHOUT_TESTAPPS=ON -G "Unix Makefiles" \
+        -DLWS_WITH_SHARED=OFF -DLWS_WITHOUT_TESTAPPS=ON -DCMAKE_C_FLAGS=-Wno-error -G "Unix Makefiles" \
     && make \
     && make install
 
 # Build broker
 COPY src /tmp/src
 RUN cd /tmp/src && make
+
+# Build the OpenDXL Python client and console wheels
+RUN python3 -m venv /tmp/wheelenv \
+    && /tmp/wheelenv/bin/pip install --no-cache-dir --upgrade pip wheel \
+    && /tmp/wheelenv/bin/pip wheel --no-cache-dir --no-deps -w /tmp/wheels \
+        "${DXL_CLIENT_PIP_SPEC}" "${DXL_CONSOLE_PIP_SPEC}"
 
 # Generate documentation
 COPY docs /tmp/docs
@@ -56,11 +73,16 @@ RUN if [ "$build_docs" = "true" ]; then @INSTALL_DOC_PACKAGES@ \
 
 FROM @BROKER_IMAGE@
 
-ARG DXL_CONSOLE_VERSION=0.3.3
-
 # Install packages
 RUN @INSTALL_BROKER_PACKAGES@
-@INSTALL_PIP@
+
+# Install the OpenDXL console and client wheels built above into a virtual
+# environment
+COPY --from=builder /tmp/wheels /tmp/wheels
+RUN python3 -m venv /opt/dxlconsole \
+    && /opt/dxlconsole/bin/pip install --no-cache-dir /tmp/wheels/*.whl \
+    && rm -rf /tmp/wheels
+
 COPY dxlbroker /dxlbroker
 COPY LICENSE* /dxlbroker/
 COPY --from=builder /tmp/src/mqtt-core/src/dxlbroker /dxlbroker/bin

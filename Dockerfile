@@ -2,12 +2,24 @@
 # Compile Broker
 ###############################################################################
 
-FROM debian:stretch-slim as builder
+FROM debian:bookworm-slim AS builder
 ARG build_docs=false
+
+# The OpenDXL Python client used by the embedded console. The PyPI release
+# (5.6.0.x) pins msgpack<1.0 (vulnerable, GHSA-6v7p-g79w-8964) and does not
+# start on current Python versions; override with a pip requirement
+# specifier once a fixed release is published.
+ARG DXL_CLIENT_PIP_SPEC="git+https://github.com/derjochenmueller/opendxl-client-python@epo-legacy"
+# The OpenDXL console. The PyPI release (0.3.3) fails on Python 3 when
+# started with the broker identifier and when generating provisioning
+# packages; override with a pip requirement specifier (e.g. dxlconsole==x.y.z)
+# once a fixed release is published.
+ARG DXL_CONSOLE_PIP_SPEC="git+https://github.com/derjochenmueller/opendxl-console@master"
 
 # Packages (OpenSSL, Boost)
 RUN apt-get update -y \
-    && apt-get install -y libssl1.0-dev libboost-dev cmake uuid-dev wget build-essential
+    && apt-get install -y --no-install-recommends libssl-dev libboost-dev cmake uuid-dev wget ca-certificates \
+        build-essential git python3 python3-venv
 
 # Message Pack
 RUN cd /tmp \
@@ -34,7 +46,7 @@ RUN cd /tmp \
     && tar xvzf v3.1-stable-opendxl-4.tar.gz \
     && cd libwebsockets-3.1-stable-opendxl-4 \
     && cmake -DCMAKE_BUILD_TYPE=release -DLWS_IPV6=On -DLWS_WITH_STATIC=ON \
-        -DLWS_WITH_SHARED=OFF -DLWS_WITHOUT_TESTAPPS=ON -G "Unix Makefiles" \
+        -DLWS_WITH_SHARED=OFF -DLWS_WITHOUT_TESTAPPS=ON -DCMAKE_C_FLAGS=-Wno-error -G "Unix Makefiles" \
     && make \
     && make install
 
@@ -42,10 +54,16 @@ RUN cd /tmp \
 COPY src /tmp/src
 RUN cd /tmp/src && make
 
+# Build the OpenDXL Python client and console wheels
+RUN python3 -m venv /tmp/wheelenv \
+    && /tmp/wheelenv/bin/pip install --no-cache-dir --upgrade pip wheel \
+    && /tmp/wheelenv/bin/pip wheel --no-cache-dir --no-deps -w /tmp/wheels \
+        "${DXL_CLIENT_PIP_SPEC}" "${DXL_CONSOLE_PIP_SPEC}"
+
 # Generate documentation
 COPY docs /tmp/docs
 RUN mkdir /tmp/docs-output
-RUN if [ "$build_docs" = "true" ]; then apt-get -y install flex bison python3 doxygen \
+RUN if [ "$build_docs" = "true" ]; then apt-get -y install --no-install-recommends flex bison doxygen \
     && cd /tmp/docs \
     && . /tmp/src/version \
     && sed -i "s,@PROJECT_NUMBER@,$SOMAJVER.$SOMINVER.$SOSUBMINVER.$SOBLDNUM,g" doxygen.config \
@@ -55,22 +73,21 @@ RUN if [ "$build_docs" = "true" ]; then apt-get -y install flex bison python3 do
 # Build Broker Image
 ###############################################################################
 
-FROM debian:stretch-slim
-
-ARG DXL_CONSOLE_VERSION=0.3.3
+FROM debian:bookworm-slim
 
 # Install packages
 RUN apt-get update -y \
-    && apt-get install -y libssl1.0 wget uuid-runtime python iproute2 procps \
+    && apt-get install -y --no-install-recommends libssl3 openssl ca-certificates wget uuid-runtime \
+        python3 python3-venv iproute2 procps adduser \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python PIP
-RUN wget -O get-pip.py 'https://bootstrap.pypa.io/get-pip.py' \
-    && python get-pip.py --disable-pip-version-check --no-cache-dir \
-    && rm -f get-pip.py \
-    && cp -f /usr/local/bin/pip2 /usr/local/bin/pip \
-    && pip install dxlconsole==${DXL_CONSOLE_VERSION}
+# Install the OpenDXL console and client wheels built above into a virtual
+# environment
+COPY --from=builder /tmp/wheels /tmp/wheels
+RUN python3 -m venv /opt/dxlconsole \
+    && /opt/dxlconsole/bin/pip install --no-cache-dir /tmp/wheels/*.whl \
+    && rm -rf /tmp/wheels
 
 COPY dxlbroker /dxlbroker
 COPY LICENSE* /dxlbroker/
