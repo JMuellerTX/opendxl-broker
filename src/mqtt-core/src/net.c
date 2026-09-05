@@ -442,6 +442,9 @@ int mqtt3_socket_listen(struct _mqtt3_listener *listener)
 #endif
 
 #ifdef WITH_EC
+            /* Without ECDH parameters OpenSSL < 1.1.0 silently drops every
+             * ECDHE cipher suite, leaving only RSA key transport (no forward
+             * secrecy). OpenSSL >= 1.1.0 selects the curve automatically. */
 #if OPENSSL_VERSION_NUMBER >= 0x10002000L && OPENSSL_VERSION_NUMBER < 0x10100000L
             SSL_CTX_set_ecdh_auto(listener->ssl_ctx, 1);
 #elif OPENSSL_VERSION_NUMBER >= 0x10000000L && OPENSSL_VERSION_NUMBER < 0x10002000L
@@ -453,6 +456,11 @@ int mqtt3_socket_listen(struct _mqtt3_listener *listener)
             SSL_CTX_set_tmp_ecdh(listener->ssl_ctx, ecdh);
             EC_KEY_free(ecdh);
 #endif
+#endif
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+            /* Use the built-in DH parameters so that the DHE suites of the
+             * configured cipher list are usable as well (OpenSSL >= 3.0). */
+            SSL_CTX_set_dh_auto(listener->ssl_ctx, 1);
 #endif
 
             snprintf(buf, 256, "mosquitto-%d", listener->port);

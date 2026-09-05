@@ -11,7 +11,7 @@ BROKER_CFLAGS:= \
 	-Wall -Wno-missing-field-initializers -ggdb -O2 -Wextra -std=gnu++0x \
 	-I. -I.. -I../lib -I./dxl -I${BROKERLIB_DIR} -I${BROKERCOMMON_DIR}/include $(ADD_INCLUDE) \
 	-DVERSION="\"${VERSION}\"" -DTIMESTAMP="\"${TIMESTAMP}\"" \
-	-DDXL -D__STDC_FORMAT_MACROS -DPACKET_COUNT \
+	-DDXL -D__STDC_FORMAT_MACROS -DPACKET_COUNT -DWITH_EC \
 	-DSOMAJVER="\"${SOMAJVER}\"" -DSOMINVER="\"${SOMINVER}\"" -DSOSUBMINVER="\"${SOSUBMINVER}\"" \
 	-DSOBLDNUM="\"${SOBLDNUM}\""
 
@@ -28,4 +28,4 @@ ifeq ($(UNAME),Linux)
 endif
 
 BROKER_LIBS:=$(BROKER_LIBS) -Wl,-rpath,'$$ORIGIN/../lib' -L${BROKERLIB_DIR} \
-	-lmsgpackc -ldxlbroker -lssl -ljsoncpp -luuid -lpthread -lssl -lcrypto -lwebsockets
+	-ldxlbroker -lmsgpackc -lssl -ljsoncpp -luuid -lpthread -lssl -lcrypto -lwebsockets
