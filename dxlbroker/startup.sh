@@ -169,6 +169,29 @@ if [ ! -f $DVOL_CONFIG_DEFAULTS_FILE ]; then
 fi
 
 #
+# TLS cipher configuration (applied on every start, environment driven)
+#
+# DXL_TLS_MODE selects a predefined cipher list for the MQTT listener:
+#   modern   - forward-secrecy suites first, AES128-SHA256 (RSA key transport)
+#              as fallback: behaves like Trellix DXL Broker >= 6.1.1 (default)
+#   legacy   - RSA key transport only (AES128-SHA256 and friends): behaves
+#              like DXL brokers before 6.1.1 (no forward secrecy)
+#   pfs-only - ECDHE/DHE suites only (FIPS 140-3 oriented profile)
+# DXL_TLS_CIPHERS overrides the list with an explicit OpenSSL cipher string.
+# A user-provided ciphers= line in dxlbroker.conf still takes precedence
+# over the defaults file edited here.
+#
+case "${DXL_TLS_MODE:-modern}" in
+    modern)   TLS_MODE_CIPHERS="ECDHE+AESGCM:ECDHE+AES:DHE+AES:AES128-SHA256:!aNULL:!eNULL:!MD5:!3DES" ;;
+    legacy)   TLS_MODE_CIPHERS="AES128-SHA256:AES256-SHA256:AES128-GCM-SHA256:AES256-GCM-SHA384:!aNULL:!eNULL" ;;
+    pfs-only) TLS_MODE_CIPHERS="ECDHE+AESGCM:ECDHE+AES:DHE+AES:!aNULL:!eNULL:!MD5:!3DES" ;;
+    *) fail "Unknown DXL_TLS_MODE '$DXL_TLS_MODE' (expected modern, legacy or pfs-only)." ;;
+esac
+TLS_CIPHERS="${DXL_TLS_CIPHERS:-$TLS_MODE_CIPHERS}"
+echo "  TLS cipher mode: ${DXL_TLS_MODE:-modern} (${TLS_CIPHERS})"
+sed -i "s|^ciphers=.*|ciphers=${TLS_CIPHERS}|" $DVOL_CONFIG_DEFAULTS_FILE     || { fail 'Error setting cipher list in config file.'; }
+
+#
 # Read broker identifier from configuration file
 #
 
