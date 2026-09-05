@@ -100,11 +100,21 @@ void _mosquitto_net_cleanup(void)
 /* DXL begin */
 int _mosquitto_fips_enable(int mode)
 {
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+    /* FIPS_mode()/FIPS_mode_set() were removed in OpenSSL 3.0; FIPS is a
+     * property of the default provider context there. */
+    if( EVP_default_properties_is_fips_enabled( NULL ) != mode )
+    {
+        _mosquitto_log_printf( NULL, MOSQ_LOG_INFO, "Setting FIPS mode to %d.", mode );
+        return( EVP_default_properties_enable_fips( NULL, mode ) );
+    }
+#else
     if( FIPS_mode() != mode )
     {
         _mosquitto_log_printf( NULL, MOSQ_LOG_INFO, "Setting FIPS mode to %d.", mode );
         return( FIPS_mode_set( mode ) );
     }
+#endif
     else
     {
         _mosquitto_log_printf( NULL, MOSQ_LOG_INFO, "FIPS mode already in correct state." );
