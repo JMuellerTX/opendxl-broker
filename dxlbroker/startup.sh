@@ -210,8 +210,11 @@ else
     echo "Generating certificate files..."
 
     # Create Client CA
+    # keyUsage: RFC 5280 requires it for CA certificates (strict verifiers such
+    # as the default Python >= 3.13 ssl context reject CA certificates without it)
     openssl req -new -passout pass:"$CERT_PASS" -subj "/CN=OpenDxlClientCA-$BROKER_ID" -x509 -days $CERT_DAYS \
-        -extensions v3_ca -keyout $DVOL_CLIENT_CA_KEY_FILE -out $DVOL_CLIENT_CA_CERT_FILE \
+        -extensions v3_ca -addext "keyUsage=critical,keyCertSign,cRLSign" \
+        -keyout $DVOL_CLIENT_CA_KEY_FILE -out $DVOL_CLIENT_CA_CERT_FILE \
         || { fail 'Error creating client CA.'; }
 
     # Generate Broker CA CSR
@@ -220,7 +223,7 @@ else
         || { fail 'Error generating broker CA certificate signing request.'; }
 
     # Create V3 extension file (CA is true)
-    echo "basicConstraints=CA:TRUE" > $DVOL_BROKER_V3_EXT_FILE \
+    printf "basicConstraints=critical,CA:TRUE\nkeyUsage=critical,keyCertSign,cRLSign\n" > $DVOL_BROKER_V3_EXT_FILE \
         || { fail 'Error creating broker CA V3 extension file.'; }
 
     # Sign Broker CA CSR
@@ -244,7 +247,9 @@ else
         || { fail 'Error generating broker CSR.'; }
 
     # Create V3 extension file (CA is false)
-    echo "basicConstraints=CA:FALSE" > $DVOL_BROKER_V3_EXT_FILE \
+    # clientAuth: the broker certificate is also used as client certificate by
+    # the embedded console and for bridging
+    printf "basicConstraints=CA:FALSE\nkeyUsage=digitalSignature,keyEncipherment\nextendedKeyUsage=serverAuth,clientAuth\n" > $DVOL_BROKER_V3_EXT_FILE \
         || { fail 'Error creating broker V3 extension file.'; }
 
     # Sign the Broker CSR
@@ -260,4 +265,4 @@ fi
 
 # Run the broker console
 cd $DXLBROKER_CONSOLE_DIR || { fail 'Unable to change to broker console directory.'; }
-python2.7 -m dxlconsole $DVOL_CONSOLE_CONFIG_DIR $BROKER_ID &
+/opt/dxlconsole/bin/python -m dxlconsole $DVOL_CONSOLE_CONFIG_DIR $BROKER_ID &
