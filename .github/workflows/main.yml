@@ -14,9 +14,12 @@ jobs:
   build:
 
     runs-on: ubuntu-latest
+    # The client test suite is cloned from the master branch of the Java client fork, which is its JDK 21 line
+    # (per-JDK branches jdk17/jdk11/jdk8 exist there, see its README.md "Branches"). Gradle runs on the matrix
+    # JDK and the client's toolchain pins the same version, so no JDK is downloaded on the runner.
     strategy:
       matrix:
-        java-version: [ 8 ]
+        java-version: [ 21 ]
 
     steps:
     - name: Checkout
