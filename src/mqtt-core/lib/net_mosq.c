@@ -333,31 +333,44 @@ int _mosquitto_socket_connect(struct mosquitto *mosq, const char *host, uint16_t
     }
 
     if(mosq->tls_cafile || mosq->tls_capath){
-#if OPENSSL_VERSION_NUMBER >= 0x10001000L
-        if(!mosq->tls_version || !strcmp(mosq->tls_version, "tlsv1.2")){
-            mosq->ssl_ctx = SSL_CTX_new(TLSv1_2_client_method());
-        }else if(!strcmp(mosq->tls_version, "tlsv1.1")){
-            mosq->ssl_ctx = SSL_CTX_new(TLSv1_1_client_method());
-        }else if(!strcmp(mosq->tls_version, "tlsv1")){
-            mosq->ssl_ctx = SSL_CTX_new(TLSv1_client_method());
-        }else{
-            _mosquitto_log_printf(mosq, MOSQ_LOG_ERR, "Error: Protocol %s not supported.", mosq->tls_version);
-            COMPAT_CLOSE(sock);
-            return MOSQ_ERR_INVAL;
-        }
-#else
-        if(!mosq->tls_version || !strcmp(mosq->tls_version, "tlsv1")){
-            mosq->ssl_ctx = SSL_CTX_new(TLSv1_client_method());
-        }else{
-            _mosquitto_log_printf(mosq, MOSQ_LOG_ERR, "Error: Protocol %s not supported.", mosq->tls_version);
-            COMPAT_CLOSE(sock);
-            return MOSQ_ERR_INVAL;
-        }
-#endif
-        if(!mosq->ssl_ctx){
-            _mosquitto_log_printf(mosq, MOSQ_LOG_ERR, "Error: Unable to create TLS context.");
-            COMPAT_CLOSE(sock);
-            return MOSQ_ERR_TLS;
+        /* Bridge connections: same reasoning as the listener in net.c. The
+         * version-locked client methods are gone in OpenSSL 4.0, so the context
+         * is created once and the protocol range is set explicitly. */
+        {
+            int tls_min_version = TLS1_2_VERSION;
+            int tls_max_version = 0;   /* 0 = highest version the library supports */
+
+            if(mosq->tls_version && strcmp(mosq->tls_version, "tlsv1.2")){
+                if(!strcmp(mosq->tls_version, "tlsv1.3")){
+                    tls_min_version = TLS1_3_VERSION;
+                    tls_max_version = TLS1_3_VERSION;
+                }else if(!strcmp(mosq->tls_version, "tlsv1.1")){
+                    tls_min_version = TLS1_1_VERSION;
+                    tls_max_version = TLS1_1_VERSION;
+                }else if(!strcmp(mosq->tls_version, "tlsv1")){
+                    tls_min_version = TLS1_VERSION;
+                    tls_max_version = TLS1_VERSION;
+                }else{
+                    _mosquitto_log_printf(mosq, MOSQ_LOG_ERR, "Error: Protocol %s not supported.", mosq->tls_version);
+                    COMPAT_CLOSE(sock);
+                    return MOSQ_ERR_INVAL;
+                }
+            }else if(mosq->tls_version){
+                tls_max_version = TLS1_2_VERSION;
+            }
+
+            mosq->ssl_ctx = SSL_CTX_new(TLS_client_method());
+            if(!mosq->ssl_ctx){
+                _mosquitto_log_printf(mosq, MOSQ_LOG_ERR, "Error: Unable to create TLS context.");
+                COMPAT_CLOSE(sock);
+                return MOSQ_ERR_TLS;
+            }
+            if(!SSL_CTX_set_min_proto_version(mosq->ssl_ctx, tls_min_version)
+                || !SSL_CTX_set_max_proto_version(mosq->ssl_ctx, tls_max_version)){
+                _mosquitto_log_printf(mosq, MOSQ_LOG_ERR, "Error: Unable to set the TLS protocol version range.");
+                COMPAT_CLOSE(sock);
+                return MOSQ_ERR_TLS;
+            }
         }
 
 #if OPENSSL_VERSION_NUMBER >= 0x10000000

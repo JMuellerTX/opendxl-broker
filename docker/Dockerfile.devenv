@@ -1,0 +1,92 @@
+###############################################################################
+# Compile Broker
+###############################################################################
+
+FROM debian:bookworm-slim AS builder
+ARG build_docs=false
+
+# The OpenDXL Python client used by the embedded console. The PyPI release
+# (5.6.0.x) pins msgpack<1.0 (vulnerable, GHSA-6v7p-g79w-8964) and does not
+# start on current Python versions; override with a pip requirement
+# specifier once a fixed release is published.
+ARG DXL_CLIENT_PIP_SPEC="git+https://github.com/derjochenmueller/opendxl-client-python@epo-legacy"
+# The OpenDXL console. The PyPI release (0.3.3) fails on Python 3 when
+# started with the broker identifier and when generating provisioning
+# packages; override with a pip requirement specifier (e.g. dxlconsole==x.y.z)
+# once a fixed release is published.
+ARG DXL_CONSOLE_PIP_SPEC="git+https://github.com/derjochenmueller/opendxl-console@master"
+
+# Packages (Boost, build tools). The distribution OpenSSL is only used to
+# bootstrap; the broker links against the OpenSSL built below.
+RUN apt-get update -y \
+    && apt-get install -y --no-install-recommends libssl-dev libboost-dev cmake uuid-dev wget ca-certificates \
+        build-essential git patch perl zlib1g-dev python3 python3-venv
+
+# OpenSSL. No distribution ships 4.x yet, so it is built from source into
+# /opt/openssl and everything downstream is pointed at it. Keeping it in its own
+# prefix means the image's package-manager OpenSSL stays untouched and the
+# broker cannot accidentally pick up the older library at runtime.
+ARG OPENSSL_VERSION=4.0.2
+RUN cd /tmp \
+    && wget -q https://github.com/openssl/openssl/releases/download/openssl-${OPENSSL_VERSION}/openssl-${OPENSSL_VERSION}.tar.gz \
+    && tar xzf openssl-${OPENSSL_VERSION}.tar.gz \
+    && cd openssl-${OPENSSL_VERSION} \
+    && ./Configure --prefix=/opt/openssl --openssldir=/opt/openssl/ssl \
+        --libdir=lib enable-fips shared \
+        -Wl,-rpath,/opt/openssl/lib \
+    && make -j"$(nproc)" \
+    && make install_sw install_ssldirs install_fips \
+    && /opt/openssl/bin/openssl version -a \
+    && rm -rf /tmp/openssl-${OPENSSL_VERSION}*
+
+ENV OPENSSL_ROOT_DIR=/opt/openssl
+ENV PKG_CONFIG_PATH=/opt/openssl/lib/pkgconfig
+ENV LD_LIBRARY_PATH=/opt/openssl/lib
+
+# Message Pack
+RUN cd /tmp \
+    && wget https://github.com/msgpack/msgpack-c/releases/download/cpp-3.1.1/msgpack-3.1.1.tar.gz \
+    && tar xvfz ./msgpack-3.1.1.tar.gz \
+    && cd msgpack-3.1.1 \
+    && cmake . \
+    && make \
+    && make install
+
+# JsonCPP
+RUN cd /tmp \
+    && wget https://github.com/open-source-parsers/jsoncpp/archive/1.8.4.tar.gz \
+    && tar xvfz 1.8.4.tar.gz \
+    && cd jsoncpp-1.8.4 \
+    && cmake -DCMAKE_BUILD_TYPE=release -DBUILD_STATIC_LIBS=ON -DBUILD_SHARED_LIBS=OFF \
+        -DARCHIVE_INSTALL_DIR=/usr/local/lib -G "Unix Makefiles" \
+    && make \
+    && make install
+
+# libwebsockets. The pinned fork is from 2019 and predates OpenSSL 4, so it is
+# patched for the two removals it trips over: ASN1_STRING is opaque, and the
+# version-locked SSLv23_server_method() is gone. See docker/patches/.
+COPY docker/patches /tmp/patches
+# libwebsockets
+RUN cd /tmp \
+    && wget https://github.com/opendxl-community/libwebsockets/archive/v3.1-stable-opendxl-4.tar.gz \
+    && tar xvzf v3.1-stable-opendxl-4.tar.gz \
+    && cd libwebsockets-3.1-stable-opendxl-4 \
+    && patch -p1 < /tmp/patches/libwebsockets-3.1-openssl4.patch \
+    && cmake -DCMAKE_BUILD_TYPE=release -DLWS_IPV6=On -DLWS_WITH_STATIC=ON \
+        -DLWS_WITH_SHARED=OFF -DLWS_WITHOUT_TESTAPPS=ON -DCMAKE_C_FLAGS=-Wno-error \
+        -DLWS_OPENSSL_INCLUDE_DIRS=/opt/openssl/include \
+        -DLWS_OPENSSL_LIBRARIES="/opt/openssl/lib/libssl.so;/opt/openssl/lib/libcrypto.so" \
+        -DOPENSSL_ROOT_DIR=/opt/openssl -G "Unix Makefiles" \
+    && make \
+    && make install
+
+# Stops before the broker build. Identical instructions to Dockerfile above this
+# point, so every layer is a BuildKit cache hit and the image is ready in seconds.
+# Compile the broker interactively against OpenSSL 4:
+#
+#   docker build -f docker/Dockerfile.devenv -t dxlbroker:devenv .
+#   docker run --rm -v "$PWD/src:/src" -w /src dxlbroker:devenv \n#       make ADD_INCLUDE=-I/opt/openssl/include ADD_LIB=-L/opt/openssl/lib
+#
+COPY src /src
+WORKDIR /src
+CMD ["make", "-k", "ADD_INCLUDE=-I/opt/openssl/include", "ADD_LIB=-L/opt/openssl/lib"]

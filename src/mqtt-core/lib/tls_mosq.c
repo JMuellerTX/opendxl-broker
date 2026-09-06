@@ -76,7 +76,7 @@ int _mosquitto_verify_certificate_hostname(X509 *cert, const char *hostname)
 {
     int i;
     char name[256];
-    X509_NAME *subj;
+    const X509_NAME *subj;
     bool have_san_dns = false;
     STACK_OF(GENERAL_NAME) *san;
     const GENERAL_NAME *nval;
@@ -94,18 +94,18 @@ int _mosquitto_verify_certificate_hostname(X509 *cert, const char *hostname)
         for(i=0; i<sk_GENERAL_NAME_num(san); i++){
             nval = sk_GENERAL_NAME_value(san, i);
             if(nval->type == GEN_DNS){
-                data = ASN1_STRING_data(nval->d.dNSName);
+                data = ASN1_STRING_get0_data(nval->d.dNSName);
                 if(data && !strcasecmp((char *)data, hostname)){
                     return 1;
                 }
                 have_san_dns = true;
             }else if(nval->type == GEN_IPADD){
-                data = ASN1_STRING_data(nval->d.iPAddress);
-                if(nval->d.iPAddress->length == 4 && ipv4_ok){
+                data = ASN1_STRING_get0_data(nval->d.iPAddress);
+                if(ASN1_STRING_length(nval->d.iPAddress) == 4 && ipv4_ok){
                     if(!memcmp(ipv4_addr, data, 4)){
                         return 1;
                     }
-                }else if(nval->d.iPAddress->length == 16 && ipv6_ok){
+                }else if(ASN1_STRING_length(nval->d.iPAddress) == 16 && ipv6_ok){
                     if(!memcmp(ipv6_addr, data, 16)){
                         return 1;
                     }

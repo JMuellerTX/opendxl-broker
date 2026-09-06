@@ -1,0 +1,90 @@
+# Test fabric: one broker per TLS profile, so a client can be exercised against
+# all of them in one run instead of reconfiguring a single container.
+#
+#     docker compose -f docker-compose.test.yml up -d --wait
+#
+# --wait blocks until every broker reports healthy, which is what the HEALTHCHECK
+# exists for: the listener accepts a TLS handshake several seconds after the
+# process starts, and polling for that by hand is how test suites end up with
+# sleep statements.
+#
+# Each broker keeps its keystore in a named volume, so certificates survive a
+# restart and a provisioned client configuration stays valid. Remove the volumes
+# (`down -v`) to start from a fresh certificate authority.
+#
+# Ports are bound to 127.0.0.1 deliberately: this is a test fabric with a
+# generated CA and a well-known console password, and it has no business being
+# reachable from the network.
+
+name: dxl-test-fabric
+
+x-broker: &broker
+  image: ${DXL_BROKER_IMAGE:-dxlbroker:openssl4}
+  restart: unless-stopped
+  stop_grace_period: 20s
+
+services:
+
+  # What a Trellix DXL Broker 6.1.3 actually presents: four ECDHE (secp256r1)
+  # suites plus eight RSA key transport ones, no DHE, TLS 1.2 only. Measured
+  # against a live fabric - test compatibility against this one.
+  trellix61:
+    <<: *broker
+    container_name: dxl-trellix61
+    environment:
+      DXL_TLS_MODE: trellix-6.1
+    ports:
+      - "127.0.0.1:18883:8883"
+      - "127.0.0.1:18443:8443"
+      - "127.0.0.1:18444:443"
+    volumes:
+      - trellix61-volume:/dxlbroker-volume
+
+  # Forward secrecy first with the legacy suite still available: the profile to
+  # run a mixed estate on. A superset of trellix61 - it also offers DHE.
+  modern:
+    <<: *broker
+    container_name: dxl-modern
+    environment:
+      DXL_TLS_MODE: modern
+    ports:
+      - "127.0.0.1:28883:8883"
+      - "127.0.0.1:28443:8443"
+      - "127.0.0.1:28444:443"
+    volumes:
+      - modern-volume:/dxlbroker-volume
+
+  # RSA key transport only: reproduces a pre-6.1.1 broker on purpose. A current
+  # JDK or Python refuses this without an explicit opt-in, which is the point -
+  # it is the regression test for the compatibility workarounds.
+  legacy:
+    <<: *broker
+    container_name: dxl-legacy
+    environment:
+      DXL_TLS_MODE: legacy
+    ports:
+      - "127.0.0.1:38883:8883"
+      - "127.0.0.1:38443:8443"
+      - "127.0.0.1:38444:443"
+    volumes:
+      - legacy-volume:/dxlbroker-volume
+
+  # No RSA key transport at all: the FIPS-140-3-oriented profile, and the one a
+  # client configured for forward secrecy only has to work against.
+  pfsonly:
+    <<: *broker
+    container_name: dxl-pfs-only
+    environment:
+      DXL_TLS_MODE: pfs-only
+    ports:
+      - "127.0.0.1:48883:8883"
+      - "127.0.0.1:48443:8443"
+      - "127.0.0.1:48444:443"
+    volumes:
+      - pfsonly-volume:/dxlbroker-volume
+
+volumes:
+  trellix61-volume:
+  modern-volume:
+  legacy-volume:
+  pfsonly-volume:

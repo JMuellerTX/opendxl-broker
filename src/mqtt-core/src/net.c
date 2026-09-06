@@ -258,7 +258,7 @@ int mosquitto_process_client_certificate(X509_STORE_CTX *ctx, struct mosquitto *
 
             if(ext_list){
                 for(int i = 0; i < sk_X509_EXTENSION_num(ext_list); i++){
-                    ASN1_OBJECT *obj;
+                    const ASN1_OBJECT *obj;
                     X509_EXTENSION *ext;
                     ext = sk_X509_EXTENSION_value(ext_list, i);
                     if(!ext) continue;
@@ -266,13 +266,14 @@ int mosquitto_process_client_certificate(X509_STORE_CTX *ctx, struct mosquitto *
                     if(!obj) continue;
                     int nid = OBJ_obj2nid(obj);
                     if(nid != 0 && (nid == NID_dxlClientGuid || nid == NID_dxlTenantGuid)){
-                        ASN1_OCTET_STRING* octet_str = X509_EXTENSION_get_data(ext);
+                        const ASN1_OCTET_STRING* octet_str = X509_EXTENSION_get_data(ext);
                         if(octet_str){
-                            const unsigned char* octet_str_data = octet_str->data;
+                            const unsigned char* octet_str_data = ASN1_STRING_get0_data(octet_str);
                             if(octet_str_data){
                                 long xlen;
                                 int tag, xclass;
-                                /*int ret =*/ ASN1_get_object(&octet_str_data, &xlen, &tag, &xclass, octet_str->length);
+                                /*int ret =*/ ASN1_get_object(&octet_str_data, &xlen, &tag, &xclass,
+                                    ASN1_STRING_length(octet_str));
                                 if(nid == NID_dxlClientGuid){
                                     context->dxl_client_guid = _mosquitto_strdup((char*)octet_str_data);
                                 }else{
@@ -326,6 +327,8 @@ int mqtt3_socket_listen(struct _mqtt3_listener *listener)
     X509_STORE *store;
     X509_LOOKUP *lookup;
     int ssl_options = 0;
+    int tls_min_version;
+    int tls_max_version;
     char buf[256];
 
 #ifdef WITH_EC
@@ -403,27 +406,56 @@ int mqtt3_socket_listen(struct _mqtt3_listener *listener)
     /* We need to have at least one working socket. */
     if(listener->sock_count > 0){
         if((listener->cafile || listener->capath) && listener->certfile && listener->keyfile){
-#if OPENSSL_VERSION_NUMBER >= 0x10001000L
-            if(listener->tls_version == NULL){
-                listener->ssl_ctx = SSL_CTX_new(TLSv1_2_server_method());
-            }else if(!strcmp(listener->tls_version, "tlsv1.2")){
-                listener->ssl_ctx = SSL_CTX_new(TLSv1_2_server_method());
-            }else if(!strcmp(listener->tls_version, "tlsv1.1")){
-                listener->ssl_ctx = SSL_CTX_new(TLSv1_1_server_method());
-            }else if(!strcmp(listener->tls_version, "tlsv1")){
-                listener->ssl_ctx = SSL_CTX_new(SSLv23_server_method());
-            }
-#else
-            listener->ssl_ctx = SSL_CTX_new(SSLv23_server_method());
-#endif
+            /* The version-locked SSLv23_/TLSv1_x_server_method() functions were
+             * removed in OpenSSL 4.0. TLS_server_method() plus an explicit
+             * protocol range says the same thing in the supported way, and it
+             * lets the listener negotiate TLS 1.3 when both ends support it. */
+            listener->ssl_ctx = SSL_CTX_new(TLS_server_method());
             if(!listener->ssl_ctx){
                 _mosquitto_log_printf(NULL, MOSQ_LOG_ERR, "Error: Unable to create TLS context.");
                 COMPAT_CLOSE(sock);
                 return 1;
             }
 
-            /* Don't accept SSLv2 or SSLv3 */
-            ssl_options = SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3;
+            /* TLS 1.2 is the floor: no DXL broker or client needs anything older
+             * and OpenSSL 4 refuses SSLv3 outright. An explicit "tlsv1"/"tlsv1.1"
+             * in the configuration is honoured where the library still allows it,
+             * and warned about, because it is a downgrade. */
+            tls_min_version = TLS1_2_VERSION;
+            tls_max_version = 0;   /* 0 = highest version the library supports */
+            if(listener->tls_version != NULL){
+                if(!strcmp(listener->tls_version, "tlsv1.3")){
+                    tls_min_version = TLS1_3_VERSION;
+                    tls_max_version = TLS1_3_VERSION;
+                }else if(!strcmp(listener->tls_version, "tlsv1.2")){
+                    tls_min_version = TLS1_2_VERSION;
+                    tls_max_version = TLS1_2_VERSION;
+                }else if(!strcmp(listener->tls_version, "tlsv1.1")){
+                    tls_min_version = TLS1_1_VERSION;
+                    tls_max_version = TLS1_1_VERSION;
+                    _mosquitto_log_printf(NULL, MOSQ_LOG_WARNING,
+                        "Warning: tls_version tlsv1.1 is deprecated and may be refused by the TLS library.");
+                }else if(!strcmp(listener->tls_version, "tlsv1")){
+                    tls_min_version = TLS1_VERSION;
+                    tls_max_version = TLS1_VERSION;
+                    _mosquitto_log_printf(NULL, MOSQ_LOG_WARNING,
+                        "Warning: tls_version tlsv1 is deprecated and may be refused by the TLS library.");
+                }else{
+                    _mosquitto_log_printf(NULL, MOSQ_LOG_ERR,
+                        "Error: Protocol %s not supported.", listener->tls_version);
+                    COMPAT_CLOSE(sock);
+                    return 1;
+                }
+            }
+            if(!SSL_CTX_set_min_proto_version(listener->ssl_ctx, tls_min_version)
+                || !SSL_CTX_set_max_proto_version(listener->ssl_ctx, tls_max_version)){
+                _mosquitto_log_printf(NULL, MOSQ_LOG_ERR,
+                    "Error: Unable to set the TLS protocol version range.");
+                COMPAT_CLOSE(sock);
+                return 1;
+            }
+
+            ssl_options = 0;
 #ifdef SSL_OP_NO_COMPRESSION
             /* Disable compression */
             ssl_options |= SSL_OP_NO_COMPRESSION;

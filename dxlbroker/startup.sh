@@ -177,6 +177,12 @@ fi
 #   legacy   - RSA key transport only (AES128-SHA256 and friends): behaves
 #              like DXL brokers before 6.1.1 (no forward secrecy)
 #   pfs-only - ECDHE/DHE suites only (FIPS 140-3 oriented profile)
+#   trellix-6.1 - the exact 12 suites a Trellix DXL Broker 6.1.3.55 offers,
+#              measured against a live fabric: four ECDHE (secp256r1) plus
+#              eight RSA key transport, and no DHE. Use this to test against
+#              what production actually presents rather than a superset of it;
+#              "modern" additionally offers DHE, so it is a compatibility
+#              target, not a faithful mock.
 # DXL_TLS_CIPHERS overrides the list with an explicit OpenSSL cipher string.
 # A user-provided ciphers= line in dxlbroker.conf still takes precedence
 # over the defaults file edited here.
@@ -185,7 +191,8 @@ case "${DXL_TLS_MODE:-modern}" in
     modern)   TLS_MODE_CIPHERS="ECDHE+AESGCM:ECDHE+AES:DHE+AES:AES128-SHA256:!aNULL:!eNULL:!MD5:!3DES" ;;
     legacy)   TLS_MODE_CIPHERS="AES128-SHA256:AES256-SHA256:AES128-GCM-SHA256:AES256-GCM-SHA384:!aNULL:!eNULL" ;;
     pfs-only) TLS_MODE_CIPHERS="ECDHE+AESGCM:ECDHE+AES:DHE+AES:!aNULL:!eNULL:!MD5:!3DES" ;;
-    *) fail "Unknown DXL_TLS_MODE '$DXL_TLS_MODE' (expected modern, legacy or pfs-only)." ;;
+    trellix-6.1) TLS_MODE_CIPHERS="ECDHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-SHA384:ECDHE-RSA-AES128-SHA256:AES256-GCM-SHA384:AES128-GCM-SHA256:CAMELLIA256-SHA:CAMELLIA128-SHA:AES256-SHA256:AES256-SHA:AES128-SHA256:AES128-SHA" ;;
+    *) fail "Unknown DXL_TLS_MODE '$DXL_TLS_MODE' (expected modern, legacy, pfs-only or trellix-6.1)." ;;
 esac
 TLS_CIPHERS="${DXL_TLS_CIPHERS:-$TLS_MODE_CIPHERS}"
 echo "  TLS cipher mode: ${DXL_TLS_MODE:-modern} (${TLS_CIPHERS})"

@@ -2,7 +2,7 @@
 # Compile Broker
 ###############################################################################
 
-FROM quay.io/centos/centos:stream9 AS builder
+FROM almalinux:10 AS builder
 ARG build_docs=false
 
 # The OpenDXL Python client used by the embedded console. The PyPI release
@@ -18,8 +18,11 @@ ARG DXL_CONSOLE_PIP_SPEC="git+https://github.com/derjochenmueller/opendxl-consol
 
 # Packages (Boost, build tools). The distribution OpenSSL is only used to
 # bootstrap; the broker links against the OpenSSL built below.
-RUN dnf group install -y "Development Tools" \
-    && dnf install -y openssl-devel boost-devel cmake libuuid-devel wget git python3 python3-pip
+RUN dnf install -y 'dnf-command(config-manager)' \
+    && dnf config-manager --set-enabled crb \
+    && dnf group install -y "Development Tools" \
+    && dnf install -y openssl-devel boost-devel cmake libuuid-devel wget git patch \
+        perl-core zlib-devel python3 python3-pip
 
 # OpenSSL. No distribution ships 4.x yet, so it is built from source into
 # /opt/openssl and everything downstream is pointed at it. Keeping it in its own
@@ -107,9 +110,7 @@ RUN python3 -m venv /tmp/wheelenv \
 # Generate documentation
 COPY docs /tmp/docs
 RUN mkdir /tmp/docs-output
-RUN if [ "$build_docs" = "true" ]; then dnf install -y 'dnf-command(config-manager)' \
-    && dnf config-manager --set-enabled crb \
-    && dnf -y install flex bison doxygen \
+RUN if [ "$build_docs" = "true" ]; then dnf install -y flex bison doxygen \
     && cd /tmp/docs \
     && . /tmp/src/version \
     && sed -i "s,@PROJECT_NUMBER@,$SOMAJVER.$SOMINVER.$SOSUBMINVER.$SOBLDNUM,g" doxygen.config \
@@ -119,10 +120,11 @@ RUN if [ "$build_docs" = "true" ]; then dnf install -y 'dnf-command(config-manag
 # Build Broker Image
 ###############################################################################
 
-FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
+FROM almalinux:10-minimal
 
 # Install packages
-RUN microdnf install -y shadow-utils util-linux wget python3 openssl ca-certificates procps-ng uuid libuuid iproute \
+RUN microdnf install -y shadow-utils util-linux wget python3 openssl \
+        ca-certificates procps-ng libuuid iproute \
     && microdnf clean all
 
 # Install the OpenDXL console and client wheels built above into a virtual

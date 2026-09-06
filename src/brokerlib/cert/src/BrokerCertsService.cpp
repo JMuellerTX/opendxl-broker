@@ -89,7 +89,7 @@ static string lookupCertExtension( int asn1nid )
         {
             for( int i = 0; i < sk_X509_EXTENSION_num( ext_list ); i++ )
             {
-                ASN1_OBJECT *obj;
+                const ASN1_OBJECT *obj;
                 X509_EXTENSION *ext;
                 ext = sk_X509_EXTENSION_value( ext_list, i );
                 if( !ext ) continue;
@@ -98,15 +98,16 @@ static string lookupCertExtension( int asn1nid )
                 int nid = OBJ_obj2nid( obj );
                 if( nid != 0 && nid == asn1nid )
                 {
-                    ASN1_OCTET_STRING* octet_str = X509_EXTENSION_get_data( ext );
+                    const ASN1_OCTET_STRING* octet_str = X509_EXTENSION_get_data( ext );
                     if( octet_str )
                     {
-                        const unsigned char* octet_str_data = octet_str->data;
+                        const unsigned char* octet_str_data = ASN1_STRING_get0_data( octet_str );
                         if( octet_str_data )
                         {
                             long xlen;
                             int tag, xclass;
-                            /*int ret =*/ ASN1_get_object( &octet_str_data, &xlen, &tag, &xclass, octet_str->length );
+                            /*int ret =*/ ASN1_get_object( &octet_str_data, &xlen, &tag, &xclass,
+                                ASN1_STRING_length( octet_str ) );
                             retVal = (char*)octet_str_data;
                         }
                     }

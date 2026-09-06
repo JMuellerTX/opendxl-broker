@@ -16,10 +16,32 @@ ARG DXL_CLIENT_PIP_SPEC="git+https://github.com/derjochenmueller/opendxl-client-
 # once a fixed release is published.
 ARG DXL_CONSOLE_PIP_SPEC="git+https://github.com/derjochenmueller/opendxl-console@master"
 
-# Packages (OpenSSL, Boost)
+# Packages (Boost, build tools). The distribution OpenSSL is only used to
+# bootstrap; the broker links against the OpenSSL built below.
 RUN apt-get update -y \
     && apt-get install -y --no-install-recommends libssl-dev libboost-dev cmake uuid-dev wget ca-certificates \
-        build-essential git python3 python3-venv
+        build-essential git patch perl zlib1g-dev python3 python3-venv
+
+# OpenSSL. No distribution ships 4.x yet, so it is built from source into
+# /opt/openssl and everything downstream is pointed at it. Keeping it in its own
+# prefix means the image's package-manager OpenSSL stays untouched and the
+# broker cannot accidentally pick up the older library at runtime.
+ARG OPENSSL_VERSION=4.0.2
+RUN cd /tmp \
+    && wget -q https://github.com/openssl/openssl/releases/download/openssl-${OPENSSL_VERSION}/openssl-${OPENSSL_VERSION}.tar.gz \
+    && tar xzf openssl-${OPENSSL_VERSION}.tar.gz \
+    && cd openssl-${OPENSSL_VERSION} \
+    && ./Configure --prefix=/opt/openssl --openssldir=/opt/openssl/ssl \
+        --libdir=lib enable-fips shared \
+        -Wl,-rpath,/opt/openssl/lib \
+    && make -j"$(nproc)" \
+    && make install_sw install_ssldirs install_fips \
+    && /opt/openssl/bin/openssl version -a \
+    && rm -rf /tmp/openssl-${OPENSSL_VERSION}*
+
+ENV OPENSSL_ROOT_DIR=/opt/openssl
+ENV PKG_CONFIG_PATH=/opt/openssl/lib/pkgconfig
+ENV LD_LIBRARY_PATH=/opt/openssl/lib
 
 # Message Pack
 RUN cd /tmp \
@@ -40,19 +62,42 @@ RUN cd /tmp \
     && make \
     && make install
 
+# libwebsockets. The pinned fork is from 2019 and predates OpenSSL 4, so it is
+# patched for the two removals it trips over: ASN1_STRING is opaque, and the
+# version-locked SSLv23_server_method() is gone. See docker/patches/.
+COPY docker/patches /tmp/patches
 # libwebsockets
 RUN cd /tmp \
     && wget https://github.com/opendxl-community/libwebsockets/archive/v3.1-stable-opendxl-4.tar.gz \
     && tar xvzf v3.1-stable-opendxl-4.tar.gz \
     && cd libwebsockets-3.1-stable-opendxl-4 \
+    && patch -p1 < /tmp/patches/libwebsockets-3.1-openssl4.patch \
     && cmake -DCMAKE_BUILD_TYPE=release -DLWS_IPV6=On -DLWS_WITH_STATIC=ON \
-        -DLWS_WITH_SHARED=OFF -DLWS_WITHOUT_TESTAPPS=ON -DCMAKE_C_FLAGS=-Wno-error -G "Unix Makefiles" \
+        -DLWS_WITH_SHARED=OFF -DLWS_WITHOUT_TESTAPPS=ON -DCMAKE_C_FLAGS=-Wno-error \
+        -DLWS_OPENSSL_INCLUDE_DIRS=/opt/openssl/include \
+        -DLWS_OPENSSL_LIBRARIES="/opt/openssl/lib/libssl.so;/opt/openssl/lib/libcrypto.so" \
+        -DOPENSSL_ROOT_DIR=/opt/openssl -G "Unix Makefiles" \
     && make \
     && make install
 
-# Build broker
+# Build broker against the OpenSSL 4 prefix.
+#
+# The makefiles expose ADD_INCLUDE / ADD_LIB as their extension points and ignore
+# CFLAGS / LDFLAGS, so passing the usual variables links against whatever libssl
+# the distribution provides - silently, because the build still succeeds. ADD_LIB
+# lands ahead of the -lssl in BROKER_LIBS, which is the ordering the linker needs.
+#
+# The ldd check is an assertion, not a log line: a broker that reports "OpenSSL 4"
+# while resolving libssl.so.3 is worse than a failed build.
 COPY src /tmp/src
-RUN cd /tmp/src && make
+RUN cd /tmp/src \
+    && make \
+        ADD_INCLUDE="-I/opt/openssl/include" \
+        ADD_LIB="-L/opt/openssl/lib -Wl,-rpath,/opt/openssl/lib" \
+    && ldd /tmp/src/mqtt-core/src/dxlbroker | grep -E 'libssl|libcrypto' \
+    && ldd /tmp/src/mqtt-core/src/dxlbroker | grep -q '/opt/openssl/lib/libssl.so.4' \
+    && ldd /tmp/src/mqtt-core/src/dxlbroker | grep -q '/opt/openssl/lib/libcrypto.so.4' \
+    && echo "OK: broker links against OpenSSL 4 in /opt/openssl"
 
 # Build the OpenDXL Python client and console wheels
 RUN python3 -m venv /tmp/wheelenv \
@@ -94,6 +139,13 @@ COPY LICENSE* /dxlbroker/
 COPY --from=builder /tmp/src/mqtt-core/src/dxlbroker /dxlbroker/bin
 COPY --from=builder /usr/local/lib/libmsgpackc.so.2.0.0 /dxlbroker/lib
 
+# The OpenSSL 4 runtime the broker was linked against, in its own prefix so the
+# distribution's OpenSSL (used by the console and the base image tooling) is
+# left alone. The broker binary carries an rpath to /opt/openssl/lib.
+COPY --from=builder /opt/openssl/lib /opt/openssl/lib
+COPY --from=builder /opt/openssl/ssl /opt/openssl/ssl
+COPY --from=builder /opt/openssl/bin/openssl /opt/openssl/bin/openssl
+
 # Documentation
 COPY --from=builder /tmp/docs-output /dxlbroker/docs
 
@@ -108,6 +160,12 @@ RUN adduser --home /dxlbroker --disabled-password --gecos "" dxl \
 # Ensure script is executable
 RUN chmod +x /dxlbroker/startup.sh
 RUN chmod +x /dxlbroker/startup_as_root.sh
+RUN chmod +x /dxlbroker/healthcheck.sh
+
+# Readiness: a test harness needs to know when the listener actually negotiates
+# TLS, which is several seconds after the process starts. "docker run --wait"
+# and compose depends_on can use this instead of sleeping.
+HEALTHCHECK --interval=10s --timeout=10s --start-period=30s --retries=12     CMD /dxlbroker/healthcheck.sh || exit 1
 
 # Expose the volume
 VOLUME ["/dxlbroker-volume"]

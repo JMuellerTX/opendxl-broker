@@ -1,0 +1,35 @@
+# libwebsockets 3.1 (opendxl fork) against OpenSSL 4.0
+#
+# Two removals in OpenSSL 4.0 break this 2019 fork:
+#
+#   1. ASN1_STRING is opaque, and ASN1_TIME is an ASN1_STRING. lws reads
+#      as->data directly; ASN1_STRING_get0_data() is the accessor.
+#   2. The version-locked SSLv23_/TLSv1_x_ method functions are gone.
+#      TLS_server_method() plus the protocol range is the replacement.
+#      The client path already prefers TLS_client_method() when cmake
+#      detects it, so only the server side needs changing.
+#
+# Applied by the Dockerfile after extracting the tarball. The proper fix is
+# to move to libwebsockets 4.3, which needs ws.c ported to the lws 4 API.
+--- a/lib/tls/openssl/ssl.c	2026-09-07 00:22:57.214331600 +0200
++++ b/lib/tls/openssl/ssl.c	2026-09-07 00:23:04.954179800 +0200
+@@ -554,7 +554,7 @@
+ {
+ #if !defined(LWS_PLAT_OPTEE)
+ 
+-	const char *p = (const char *)as->data;
++	const char *p = (const char *)ASN1_STRING_get0_data((const ASN1_STRING *)as);
+ 	struct tm t;
+ 
+ 	/* [YY]YYMMDDHHMMSSZ */
+--- a/lib/tls/openssl/openssl-server.c	2026-09-07 00:22:57.212825100 +0200
++++ b/lib/tls/openssl/openssl-server.c	2026-09-07 00:23:04.954684100 +0200
+@@ -349,7 +349,7 @@
+ 				  struct lws *wsi)
+ {
+ 	unsigned long error;
+-	SSL_METHOD *method = (SSL_METHOD *)SSLv23_server_method();
++	SSL_METHOD *method = (SSL_METHOD *)TLS_server_method();
+ 
+ 	if (!method) {
+ 		error = ERR_get_error();
