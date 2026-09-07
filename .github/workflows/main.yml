@@ -14,6 +14,7 @@ jobs:
   build:
 
     runs-on: ubuntu-latest
+    timeout-minutes: 75
     # The client test suite is cloned from the master branch of the Java client fork, which is its JDK 21 line
     # (per-JDK branches jdk17/jdk11/jdk8 exist there, see its README.md "Branches"). Gradle runs on the matrix
     # JDK and the client's toolchain pins the same version, so no JDK is downloaded on the runner.
@@ -55,7 +56,7 @@ jobs:
       run: |
         cd opendxl-client-java
         ./gradlew test --info --console=plain
-        sed -i -e "s/= false/= true/g" -e "s/;8883/;443/g" -e "s/Brokers/BrokersWebSockets/g"  clientconfig/dxlclient.config
+        sed -i -e "s/^UseWebSockets *= *false/UseWebSockets = true/" -e "s/;8883/;443/g" -e "s/Brokers/BrokersWebSockets/g"  clientconfig/dxlclient.config
         cat clientconfig/dxlclient.config
         echo Running tests with WebSockets
         ./gradlew cleanTest test --info --console=plain
