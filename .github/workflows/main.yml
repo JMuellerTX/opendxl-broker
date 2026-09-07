@@ -1,4 +1,3 @@
-
 name: Build
 
 on:
@@ -12,15 +11,42 @@ on:
 
 jobs:
   build:
-
+    # One job per Dockerfile. Each builds its image, starts the four-profile test
+    # fabric from docker-compose.test.yml on it and runs the client suites:
+    #
+    #   Java client (master = JDK 21 line)  against `modern`   (PFS first, AES128-SHA256 fallback), MQTT + WebSockets
+    #   Python client `master`              against `pfsonly`  (no RSA key transport at all),       MQTT + WebSockets
+    #   Python client `master`              against `trellix61` (what a Trellix DXL Broker 6.1.3 offers), MQTT
+    #   Python client `epo-legacy`          against `legacy`   (RSA key transport only),             MQTT
+    #
+    # The Python `master` line defaults to forward-secrecy ciphers only; running it against
+    # a broker that offers nothing else is the test that the upstream Docker Hub image
+    # (RSA key transport only) can never provide. The per-Python-version matrix lives in
+    # the client repository's own CI; here one interpreter is enough.
+    name: ${{ matrix.image.name }}
     runs-on: ubuntu-latest
     timeout-minutes: 75
-    # The client test suite is cloned from the master branch of the Java client fork, which is its JDK 21 line
-    # (per-JDK branches jdk17/jdk11/jdk8 exist there, see its README.md "Branches"). Gradle runs on the matrix
-    # JDK and the client's toolchain pins the same version, so no JDK is downloaded on the runner.
     strategy:
+      fail-fast: false
       matrix:
-        java-version: [ 21 ]
+        image:
+          - name: debian
+            dockerfile: Dockerfile
+          - name: almalinux
+            dockerfile: docker/almalinux/Dockerfile
+    env:
+      DXL_BROKER_IMAGE: dxlbroker:${{ matrix.image.name }}
+      # Host ports of the compose fabric (see docker-compose.test.yml)
+      TRELLIX61_MGMT: 18443
+      TRELLIX61_MQTT: 18883
+      MODERN_MGMT: 28443
+      MODERN_MQTT: 28883
+      MODERN_WS: 28444
+      LEGACY_MGMT: 38443
+      LEGACY_MQTT: 38883
+      PFSONLY_MGMT: 48443
+      PFSONLY_MQTT: 48883
+      PFSONLY_WS: 48444
 
     steps:
     - name: Checkout
@@ -28,35 +54,92 @@ jobs:
       with:
         submodules: recursive
 
-    - name: Set up Java ${{ matrix.java-version }}
+    - name: Set up Java 21
       uses: actions/setup-java@v4
       with:
         distribution: temurin
-        java-version: ${{ matrix.java-version }}
+        java-version: 21
 
-    - name: Build broker
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+
+    - name: Build broker image (${{ matrix.image.dockerfile }})
       run: |
-        docker build -t opendxlbroker:opendxlbroker .
+        docker build -f ${{ matrix.image.dockerfile }} -t $DXL_BROKER_IMAGE .
+        docker image ls $DXL_BROKER_IMAGE
 
-    - name: Install broker
+    - name: Start the test fabric (four TLS profiles)
       run: |
-        docker run -d -p 8883:8883 -p 8443:8443 -p 443:443 opendxlbroker:opendxlbroker
-        docker ps -a
+        docker compose -f docker-compose.test.yml up -d --wait
+        docker compose -f docker-compose.test.yml ps
+        docker exec dxl-modern openssl version
 
-    - name: Provision client
+    - name: Java client against `modern`
       run: |
         git clone --recursive https://github.com/derjochenmueller/opendxl-client-java.git
         cd opendxl-client-java
         ./gradlew assemble --console=plain
-        java -jar ./build/libs/dxlclient*all.jar provisionconfig clientconfig 127.0.0.1 client -u admin -p password
-        sed -i -e "s/127.0.0.1;127.0.0.1/127.0.0.1/g" -e "/local/d" -e "/docker/d" clientconfig/dxlclient.config
+        java -jar ./build/libs/dxlclient*all.jar provisionconfig clientconfig 127.0.0.1 client -t $MODERN_MGMT -u admin -p password
+        sed -i -e "s/127.0.0.1;127.0.0.1/127.0.0.1/g" -e "/local/d" -e "/docker/d" \
+               -e "s/;8883;/;$MODERN_MQTT;/" -e "s/;443;/;$MODERN_WS;/" clientconfig/dxlclient.config
         cat clientconfig/dxlclient.config
-        
-    - name: Execute CI
-      run: |
-        cd opendxl-client-java
         ./gradlew test --info --console=plain
-        sed -i -e "s/^UseWebSockets *= *false/UseWebSockets = true/" -e "s/;8883/;443/g" -e "s/Brokers/BrokersWebSockets/g"  clientconfig/dxlclient.config
+        sed -i -e "s/^UseWebSockets *= *false/UseWebSockets = true/" clientconfig/dxlclient.config
         cat clientconfig/dxlclient.config
         echo Running tests with WebSockets
         ./gradlew cleanTest test --info --console=plain
+
+    - name: Python client `master` against `pfsonly`
+      run: |
+        git clone --branch master https://github.com/derjochenmueller/opendxl-client-python.git py-master
+        cd py-master
+        python -m venv .venv && . .venv/bin/activate
+        pip install --upgrade pip wheel
+        pip install ".[test]"
+        # The CLI validates the management server's certificate by default; the
+        # fabric's brokers use a generated CA, so skip validation here.
+        python -m dxlclient provisionconfig ../pfsonly-config 127.0.0.1 client -t $PFSONLY_MGMT -u admin -p password --insecure
+        cp ../pfsonly-config/dxlclient.config ../pfsonly-config/client_config.cfg
+        sed -i -e "s/127.0.0.1;127.0.0.1/127.0.0.1/g" -e "/local/d" -e "/docker/d" \
+               -e "s/;8883;/;$PFSONLY_MQTT;/" -e "s/;443;/;$PFSONLY_WS;/" ../pfsonly-config/client_config.cfg
+        cat ../pfsonly-config/client_config.cfg
+        echo Running tests with MQTT
+        DXL_TEST_CONFIG=../pfsonly-config/client_config.cfg python -m pytest dxlclient/test
+        sed -i -e "s/^#\?UseWebSockets *= *False/UseWebSockets = True/" ../pfsonly-config/client_config.cfg
+        cat ../pfsonly-config/client_config.cfg
+        echo Running tests with WebSockets
+        DXL_TEST_CONFIG=../pfsonly-config/client_config.cfg python -m pytest dxlclient/test
+
+    - name: Python client `master` against `trellix61`
+      run: |
+        cd py-master
+        . .venv/bin/activate
+        python -m dxlclient provisionconfig ../trellix61-config 127.0.0.1 client -t $TRELLIX61_MGMT -u admin -p password --insecure
+        cp ../trellix61-config/dxlclient.config ../trellix61-config/client_config.cfg
+        sed -i -e "s/127.0.0.1;127.0.0.1/127.0.0.1/g" -e "/local/d" -e "/docker/d"                -e "s/;8883;/;$TRELLIX61_MQTT;/" ../trellix61-config/client_config.cfg
+        cat ../trellix61-config/client_config.cfg
+        DXL_TEST_CONFIG=../trellix61-config/client_config.cfg python -m pytest dxlclient/test
+
+    - name: Python client `epo-legacy` against `legacy`
+      run: |
+        git clone --branch epo-legacy https://github.com/derjochenmueller/opendxl-client-python.git py-legacy
+        cd py-legacy
+        python -m venv .venv && . .venv/bin/activate
+        pip install --upgrade pip wheel
+        pip install ".[test]"
+        python -m dxlclient provisionconfig ../legacy-config 127.0.0.1 client -t $LEGACY_MGMT -u admin -p password --insecure
+        cp ../legacy-config/dxlclient.config ../legacy-config/client_config.cfg
+        sed -i -e "s/127.0.0.1;127.0.0.1/127.0.0.1/g" -e "/local/d" -e "/docker/d" \
+               -e "s/;8883;/;$LEGACY_MQTT;/" ../legacy-config/client_config.cfg
+        cat ../legacy-config/client_config.cfg
+        DXL_TEST_CONFIG=../legacy-config/client_config.cfg python -m pytest dxlclient/test
+
+    - name: Broker logs
+      if: always()
+      run: |
+        docker compose -f docker-compose.test.yml ps
+        for c in dxl-trellix61 dxl-modern dxl-legacy dxl-pfs-only; do
+          echo "===== $c"; docker logs --tail 40 $c 2>&1
+        done
