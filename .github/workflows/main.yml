@@ -143,3 +143,82 @@ jobs:
         for c in dxl-trellix61 dxl-modern dxl-legacy dxl-pfs-only; do
           echo "===== $c"; docker logs --tail 40 $c 2>&1
         done
+
+  publish:
+    # Publishes the images the `build` jobs just proved to GitHub Container
+    # Registry, so other repositories (and people) can run the fork's broker
+    # without building it. The TLS profile is *not* part of the image: modern,
+    # legacy, pfsonly and trellix61 are configurations mounted at run time
+    # (see docker-compose.test.yml), so the tags name the base image instead.
+    #
+    # NOTE: a package published this way starts out **private**, and package
+    # visibility cannot be changed through the API. After the first successful
+    # run, set it to public once by hand:
+    #   github.com/users/<owner>/packages/container/opendxl-broker/settings
+    #   -> Danger Zone -> Change visibility -> Public
+    # Until that is done, only workflows in this repository can pull the image.
+    name: Publish to GHCR
+    needs: build
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        image:
+          - name: debian
+            dockerfile: Dockerfile
+            latest: true
+          - name: almalinux
+            dockerfile: docker/almalinux/Dockerfile
+            latest: false
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Log in to GHCR
+      uses: docker/login-action@v3
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Build and push
+      run: |
+        set -eu
+        repo="$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')"
+        image="ghcr.io/${repo}"
+        sha="$(git rev-parse --short HEAD)"
+        tags="-t ${image}:${{ matrix.image.name }} -t ${image}:${{ matrix.image.name }}-${sha}"
+        if [ "${{ matrix.image.latest }}" = "true" ]; then
+          tags="$tags -t ${image}:latest"
+        fi
+        docker build -f ${{ matrix.image.dockerfile }} $tags .
+        docker push --all-tags "${image}"
+        docker image ls "${image}"
+
+    - name: Smoke test the pushed image
+      run: |
+        set -eu
+        repo="$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')"
+        image="ghcr.io/${repo}:${{ matrix.image.name }}"
+        # Pull what was actually pushed, not the local build
+        docker rmi "$image" >/dev/null 2>&1 || true
+        docker pull "$image"
+        docker run -d --name smoke "$image"
+        status=starting
+        for _ in $(seq 1 40); do
+          status="$(docker inspect -f '{{.State.Health.Status}}' smoke)"
+          [ "$status" = "healthy" ] && break
+          sleep 3
+        done
+        echo "health: $status"
+        docker logs --tail 20 smoke
+        docker rm -f smoke
+        [ "$status" = "healthy" ]
