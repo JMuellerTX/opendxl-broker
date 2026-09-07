@@ -1,3 +1,6 @@
 *.o
 *.a
-dxlbroker
+# Built broker binary (upstream ignored every path named "dxlbroker", which also hid
+# dxlbroker/healthcheck.sh from git).
+/src/mqtt-core/src/dxlbroker
+/dxlbroker/bin/dxlbroker
