@@ -199,6 +199,30 @@ echo "  TLS cipher mode: ${DXL_TLS_MODE:-modern} (${TLS_CIPHERS})"
 sed -i "s|^ciphers=.*|ciphers=${TLS_CIPHERS}|" $DVOL_CONFIG_DEFAULTS_FILE     || { fail 'Error setting cipher list in config file.'; }
 
 #
+# Client connect/disconnect events (applied on every start, environment driven)
+#
+# DXL_SEND_CONNECT_EVENTS=true makes the broker publish
+# /mcafee/event/dxl/clientregistry/connect and /disconnect for every client
+# (broker setting sendConnectEvents). The connect event of this fork carries
+# tlsVersion, cipher, certThumbprint, remoteAddress and protocol in addition
+# to clientGuid - the input a monitoring sensor needs. Off by default, like
+# upstream and like a Trellix DXL broker (measured: neither sends them).
+#
+SEND_CONNECT_EVENTS="${DXL_SEND_CONNECT_EVENTS:-false}"
+case "$SEND_CONNECT_EVENTS" in
+    true|false) ;;
+    *) fail "Unknown DXL_SEND_CONNECT_EVENTS '$SEND_CONNECT_EVENTS' (expected true or false)." ;;
+esac
+echo "  Client connect events: ${SEND_CONNECT_EVENTS}"
+if grep -q '^sendConnectEvents=' $DVOL_CONFIG_DEFAULTS_FILE; then
+    sed -i "s|^sendConnectEvents=.*|sendConnectEvents=${SEND_CONNECT_EVENTS}|" $DVOL_CONFIG_DEFAULTS_FILE \
+        || { fail 'Error setting sendConnectEvents in config file.'; }
+else
+    printf '\n# Whether client connect/disconnect events are published (DXL_SEND_CONNECT_EVENTS)\nsendConnectEvents=%s\n' "$SEND_CONNECT_EVENTS" >> $DVOL_CONFIG_DEFAULTS_FILE \
+        || { fail 'Error adding sendConnectEvents to config file.'; }
+fi
+
+#
 # Read broker identifier from configuration file
 #
 

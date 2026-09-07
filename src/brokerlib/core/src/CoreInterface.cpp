@@ -167,15 +167,27 @@ void CoreInterface::onBridgeDisconnected( bool isChild, const string& brokerId )
 
 /** {@inheritDoc} */
 void CoreInterface::onClientConnected( const string& clientId ) const
-{    
+{
+    onClientConnected( clientId, ClientConnectionInfo() );
+}
+
+/** {@inheritDoc} */
+void CoreInterface::onClientConnected( const string& clientId, const ClientConnectionInfo& info ) const
+{
     if( SL_LOG.isDebugEnabled() )
-        SL_START << "onClientConnected: clientId=" << clientId << SL_DEBUG_END;
+        SL_START << "onClientConnected: clientId=" << clientId
+            << " tls=" << info.tlsVersion << " cipher=" << info.cipher
+            << " thumbprint=" << info.certThumbprint << " transport=" << info.transport
+            << SL_DEBUG_END;
 
     if( BrokerSettings::isSendConnectEventsEnabled() )
     {
         DxlMessageService& messageService = DxlMessageService::getInstance();
         shared_ptr<DxlEvent> evt = messageService.createEvent();
-        evt->setPayload( ClientRegistryConnectEventPayload( clientId ) );
+        ClientRegistryConnectEventPayload payload( clientId );
+        payload.setConnectionInfo(
+            info.tlsVersion, info.cipher, info.certThumbprint, info.remoteAddress, info.transport );
+        evt->setPayload( payload );
         messageService.sendMessage( DxlMessageConstants::CHANNEL_DXL_CLIENTREGISTRY_CONNECT_EVENT, *evt );
     }
 }

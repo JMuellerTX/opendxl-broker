@@ -98,6 +98,16 @@ struct DxlMessageConstants
     static const char* PROP_CLIENT_GUID;
     /** The client instance GUID property */
     static const char* PROP_CLIENT_INSTANCE_GUID;
+    /** The negotiated TLS protocol version of a client connection (connect event, optional) */
+    static const char* PROP_TLS_VERSION;
+    /** The negotiated TLS cipher suite, IANA name (connect event, optional) */
+    static const char* PROP_TLS_CIPHER;
+    /** SHA-1 thumbprint of the client certificate, lowercase hex (connect event, optional) */
+    static const char* PROP_CERT_THUMBPRINT;
+    /** Remote address of the client connection (connect event, optional) */
+    static const char* PROP_REMOTE_ADDRESS;
+    /** Transport of the client connection: "mqtt" or "websocket" (connect event, optional) */
+    static const char* PROP_TRANSPORT;
     /** The client tenant GUID */
     static const char* PROP_CLIENT_TENANT_GUID;
     /** Connected clients property */

@@ -136,11 +136,38 @@ public:
     void onBridgeDisconnected( bool isChild, const std::string& brokerId ) const;
 
     /**
+     * Details of a client connection, reported with the connect event
+     * (fork addition; every member may be empty when the core does not know it)
+     */
+    struct ClientConnectionInfo
+    {
+        /** Negotiated TLS protocol version, e.g. "TLSv1.3" */
+        std::string tlsVersion;
+        /** Negotiated cipher suite, IANA name, e.g. "TLS_AES_256_GCM_SHA384" */
+        std::string cipher;
+        /** SHA-1 thumbprint of the client certificate, lowercase hex without colons */
+        std::string certThumbprint;
+        /** Remote address of the connection */
+        std::string remoteAddress;
+        /** "mqtt" or "websocket" */
+        std::string transport;
+    };
+
+    /**
      * Method that is invoked (by core) when a client connects to this broker
      *
      * @param   clientId The identifier (GUID) of the client
      */
     void onClientConnected( const std::string& clientId ) const;
+
+    /**
+     * Method that is invoked (by core) when a client connects to this broker,
+     * with the details of the connection (fork addition)
+     *
+     * @param   clientId The identifier (GUID) of the client
+     * @param   info The connection details (members may be empty)
+     */
+    void onClientConnected( const std::string& clientId, const ClientConnectionInfo& info ) const;
 
     /**
      * Method that is invoked (by core) when a client disconnects from this broker

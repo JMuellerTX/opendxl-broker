@@ -13,7 +13,11 @@
 #include "RevokeCertsRunner.h"
 #include "logging_mosq.h"
 #include "DxlFlags.h"
+#include "libwebsockets.h"
+#include <openssl/ssl.h>
+#include <openssl/x509.h>
 #include <iostream>
+#include <cstdio>
 #include <stdexcept>
 #include <sys/types.h>
 #include <unistd.h>
@@ -105,10 +109,86 @@ void MqttCoreInterface::onBridgeDisconnected( const struct mosquitto* context ) 
     CoreInterface::onBridgeDisconnected( isChild, bridgeBrokerId );
 }
 
+namespace
+{
+    /**
+     * Collects what the TLS layer knows about a client connection: protocol
+     * version, cipher suite and the thumbprint of the certificate the client
+     * presented. MQTT connections carry their SSL object on the context;
+     * WebSocket connections are terminated by libwebsockets, which hands the
+     * SSL object out through lws_get_ssl(). Anything that cannot be determined
+     * stays empty and is left out of the connect event.
+     */
+    dxl::broker::core::CoreInterface::ClientConnectionInfo collectConnectionInfo(
+        const struct mosquitto* context )
+    {
+        dxl::broker::core::CoreInterface::ClientConnectionInfo info;
+
+        SSL* ssl = context->ssl;
+        if( !ssl && context->wsi )
+        {
+            ssl = lws_get_ssl( (struct lws*)context->wsi );
+        }
+        info.transport = context->wsi ? "websocket" : "mqtt";
+        if( context->address )
+        {
+            info.remoteAddress = context->address;
+        }
+        if( !ssl )
+        {
+            return info;
+        }
+
+        const char* version = SSL_get_version( ssl );
+        if( version )
+        {
+            info.tlsVersion = version;
+        }
+        const SSL_CIPHER* cipher = SSL_get_current_cipher( ssl );
+        if( cipher )
+        {
+            // IANA name (TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384), the spelling
+            // JSSE, rustls and the SIEM world use; OpenSSL's own name would be
+            // ECDHE-RSA-AES256-GCM-SHA384.
+            const char* name = SSL_CIPHER_standard_name( cipher );
+            if( name )
+            {
+                info.cipher = name;
+            }
+        }
+
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+        X509* cert = SSL_get0_peer_certificate( ssl );
+#else
+        X509* cert = SSL_get_peer_certificate( ssl );
+#endif
+        if( cert )
+        {
+            unsigned int size = 0;
+            unsigned char digest[EVP_MAX_MD_SIZE];
+            if( X509_digest( cert, EVP_sha1(), digest, &size ) )
+            {
+                // Same format as the topic authorization policy: lowercase hex, no colons
+                char hex[EVP_MAX_MD_SIZE * 2 + 1];
+                char* p = hex;
+                for( unsigned int i = 0; i < size; i++ )
+                {
+                    p += sprintf( p, "%02x", digest[i] );
+                }
+                info.certThumbprint = hex;
+            }
+#if OPENSSL_VERSION_NUMBER < 0x30000000L
+            X509_free( cert );
+#endif
+        }
+        return info;
+    }
+}
+
 /** {@inheritDoc} */
 void MqttCoreInterface::onClientConnected( const struct mosquitto* context ) const
 {
-    CoreInterface::onClientConnected( context->id );
+    CoreInterface::onClientConnected( context->id, collectConnectionInfo( context ) );
     updateTenantConnectionCount( context, 1 );
 }
 

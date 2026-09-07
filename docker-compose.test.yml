@@ -33,6 +33,7 @@ services:
     container_name: dxl-trellix61
     environment:
       DXL_TLS_MODE: trellix-6.1
+      DXL_SEND_CONNECT_EVENTS: "true"
     ports:
       - "127.0.0.1:18883:8883"
       - "127.0.0.1:18443:8443"
@@ -47,6 +48,7 @@ services:
     container_name: dxl-modern
     environment:
       DXL_TLS_MODE: modern
+      DXL_SEND_CONNECT_EVENTS: "true"
     ports:
       - "127.0.0.1:28883:8883"
       - "127.0.0.1:28443:8443"
@@ -62,6 +64,7 @@ services:
     container_name: dxl-legacy
     environment:
       DXL_TLS_MODE: legacy
+      DXL_SEND_CONNECT_EVENTS: "true"
     ports:
       - "127.0.0.1:38883:8883"
       - "127.0.0.1:38443:8443"
@@ -76,6 +79,7 @@ services:
     container_name: dxl-pfs-only
     environment:
       DXL_TLS_MODE: pfs-only
+      DXL_SEND_CONNECT_EVENTS: "true"
     ports:
       - "127.0.0.1:48883:8883"
       - "127.0.0.1:48443:8443"
