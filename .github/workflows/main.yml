@@ -93,7 +93,7 @@ jobs:
 
     - name: Python client `master` against `pfsonly`
       run: |
-        git clone --branch master https://github.com/derjochenmueller/opendxl-client-python.git py-master
+        git clone --recursive --branch master https://github.com/derjochenmueller/opendxl-client-python.git py-master
         cd py-master
         python -m venv .venv && . .venv/bin/activate
         pip install --upgrade pip wheel
@@ -124,7 +124,7 @@ jobs:
 
     - name: Python client `epo-legacy` against `legacy`
       run: |
-        git clone --branch epo-legacy https://github.com/derjochenmueller/opendxl-client-python.git py-legacy
+        git clone --recursive --branch epo-legacy https://github.com/derjochenmueller/opendxl-client-python.git py-legacy
         cd py-legacy
         python -m venv .venv && . .venv/bin/activate
         pip install --upgrade pip wheel
