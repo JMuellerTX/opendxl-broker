@@ -9,12 +9,12 @@ ARG build_docs=false
 # (5.6.0.x) pins msgpack<1.0 (vulnerable, GHSA-6v7p-g79w-8964) and does not
 # start on current Python versions; override with a pip requirement
 # specifier once a fixed release is published.
-ARG DXL_CLIENT_PIP_SPEC="git+https://github.com/derjochenmueller/opendxl-client-python@epo-legacy"
+ARG DXL_CLIENT_PIP_SPEC="git+https://github.com/JMuellerTX/opendxl-client-python@epo-legacy"
 # The OpenDXL console. The PyPI release (0.3.3) fails on Python 3 when
 # started with the broker identifier and when generating provisioning
 # packages; override with a pip requirement specifier (e.g. dxlconsole==x.y.z)
 # once a fixed release is published.
-ARG DXL_CONSOLE_PIP_SPEC="git+https://github.com/derjochenmueller/opendxl-console@master"
+ARG DXL_CONSOLE_PIP_SPEC="git+https://github.com/JMuellerTX/opendxl-console@master"
 
 # Packages (Boost, build tools). The distribution OpenSSL is only used to
 # bootstrap; the broker links against the OpenSSL built below.

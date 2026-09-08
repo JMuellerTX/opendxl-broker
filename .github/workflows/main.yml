@@ -78,7 +78,7 @@ jobs:
 
     - name: Java client against `modern`
       run: |
-        git clone --recursive https://github.com/derjochenmueller/opendxl-client-java.git
+        git clone --recursive https://github.com/JMuellerTX/opendxl-client-java.git
         cd opendxl-client-java
         ./gradlew assemble --console=plain
         java -jar ./build/libs/dxlclient*all.jar provisionconfig clientconfig 127.0.0.1 client -t $MODERN_MGMT -u admin -p password --insecure
@@ -93,7 +93,7 @@ jobs:
 
     - name: Python client `master` against `pfsonly`
       run: |
-        git clone --recursive --branch master https://github.com/derjochenmueller/opendxl-client-python.git py-master
+        git clone --recursive --branch master https://github.com/JMuellerTX/opendxl-client-python.git py-master
         cd py-master
         python -m venv .venv && . .venv/bin/activate
         pip install --upgrade pip wheel
@@ -124,7 +124,7 @@ jobs:
 
     - name: Python client `epo-legacy` against `legacy`
       run: |
-        git clone --recursive --branch epo-legacy https://github.com/derjochenmueller/opendxl-client-python.git py-legacy
+        git clone --recursive --branch epo-legacy https://github.com/JMuellerTX/opendxl-client-python.git py-legacy
         cd py-legacy
         python -m venv .venv && . .venv/bin/activate
         pip install --upgrade pip wheel
