@@ -15,6 +15,12 @@ ARG DXL_CLIENT_PIP_SPEC="git+https://github.com/JMuellerTX/opendxl-client-python
 # packages; override with a pip requirement specifier (e.g. dxlconsole==x.y.z)
 # once a fixed release is published.
 ARG DXL_CONSOLE_PIP_SPEC="git+https://github.com/JMuellerTX/opendxl-console@master"
+# The dxlbootstrap the console depends on. The PyPI release imports
+# pkg_resources, which setuptools 82 dropped and which a Python >= 3.12 virtual
+# environment no longer provides, so the console cannot even be imported; the
+# fork uses importlib.resources instead. Without this the console dies at
+# startup and the management port answers the TLS handshake with nothing.
+ARG DXL_BOOTSTRAP_PIP_SPEC="git+https://github.com/JMuellerTX/opendxl-bootstrap-python@master"
 
 # Packages (Boost, build tools). The distribution OpenSSL is only used to
 # bootstrap; the broker links against the OpenSSL built below.
@@ -105,7 +111,7 @@ RUN cd /tmp/src \
 RUN python3 -m venv /tmp/wheelenv \
     && /tmp/wheelenv/bin/pip install --no-cache-dir --upgrade pip wheel \
     && /tmp/wheelenv/bin/pip wheel --no-cache-dir --no-deps -w /tmp/wheels \
-        "${DXL_CLIENT_PIP_SPEC}" "${DXL_CONSOLE_PIP_SPEC}"
+        "${DXL_CLIENT_PIP_SPEC}" "${DXL_CONSOLE_PIP_SPEC}" "${DXL_BOOTSTRAP_PIP_SPEC}"
 
 # Generate documentation
 COPY docs /tmp/docs
