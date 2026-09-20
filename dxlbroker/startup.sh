@@ -271,7 +271,7 @@ fi
 #              like DXL brokers before 6.1.1 (no forward secrecy)
 #   pfs-only - ECDHE/DHE suites only (FIPS 140-3 oriented profile)
 #   trellix-6.1 - the exact 12 suites a Trellix DXL Broker 6.1.3.55 offers,
-#              measured against a live fabric: four ECDHE (secp256r1) plus
+#              measured against one in a lab: four ECDHE (secp256r1) plus
 #              eight RSA key transport, and no DHE. Use this to test against
 #              what production actually presents rather than a superset of it;
 #              "modern" additionally offers DHE, so it is a compatibility
