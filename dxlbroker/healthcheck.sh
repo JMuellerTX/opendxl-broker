@@ -31,14 +31,21 @@
 
 set -u
 
-CONFIG_FILE=/dxlbroker-volume/dxlbroker.conf
+# The broker settings live in config/dxlbroker.conf.defaults; config/dxlbroker.conf
+# is the optional user override next to it. The old path here pointed at neither,
+# so the port was always the 8883 fallback and a changed listenPort was probed on
+# the wrong port.
+CONFIG_DEFAULTS=/dxlbroker-volume/config/dxlbroker.conf.defaults
+CONFIG_FILE=/dxlbroker-volume/config/dxlbroker.conf
 OPENSSL=/opt/openssl/bin/openssl
 [ -x "$OPENSSL" ] || OPENSSL=openssl
 
 port="${DXL_HEALTHCHECK_PORT:-}"
-if [ -z "$port" ] && [ -r "$CONFIG_FILE" ]; then
-    port=$(sed -n 's/^listenPort=\([0-9]*\).*/\1/p' "$CONFIG_FILE" | head -1)
-fi
+for f in "$CONFIG_FILE" "$CONFIG_DEFAULTS"; do   # the override wins, as in brokerlib
+    [ -n "$port" ] && break
+    [ -r "$f" ] || continue
+    port=$(sed -n 's/^listenPort=\([0-9]*\).*/\1/p' "$f" | head -1)
+done
 [ -n "$port" ] || port=8883
 
 out=$("$OPENSSL" s_client -connect "127.0.0.1:${port}" </dev/null 2>&1)

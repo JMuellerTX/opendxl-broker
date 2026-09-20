@@ -131,6 +131,63 @@ if [ ! -f $DVOL_CONSOLE_CLIENT_CONFIG_TMPL_FILE ]; then
 fi
 
 #
+# Console credentials (applied on every start, environment driven)
+#
+# The MQTT and WebSockets listeners need no credentials at all: they require a
+# client certificate, so the fabric is protected by mutual TLS rather than by a
+# password. The console on 8443 is the exception, and it is the part that matters,
+# because the console holds the client CA and signs certificates - whoever reaches
+# it can mint an identity for the fabric.
+#
+#   DXL_CONSOLE_ENABLED=false  do not start the console. The container then has no
+#                              credentials of any kind. Nothing can be provisioned
+#                              against it either, so bring your own certificates.
+#   DXL_CONSOLE_USER           console user (default: admin)
+#   DXL_CONSOLE_PASSWORD       console password. "random" generates one per
+#                              container and prints it once, here, at start.
+#
+# The default stays "password" so that the documented provisionconfig call and the
+# CI keep working against a throwaway broker on 127.0.0.1 - but it warns, because a
+# published 8443 with this default is a certificate authority open to the network.
+#
+CONSOLE_ENABLED="${DXL_CONSOLE_ENABLED:-true}"
+case "$CONSOLE_ENABLED" in
+    true|false) ;;
+    *) fail "Unknown DXL_CONSOLE_ENABLED '$CONSOLE_ENABLED' (expected true or false)." ;;
+esac
+
+if [ "$CONSOLE_ENABLED" = "true" ]; then
+    CONSOLE_USER="${DXL_CONSOLE_USER:-admin}"
+    CONSOLE_PASSWORD="${DXL_CONSOLE_PASSWORD:-password}"
+    if [ "$CONSOLE_PASSWORD" = "random" ]; then
+        # Alphanumeric on purpose: it travels through configuration files, shell
+        # history and a Basic auth header before anyone types it.
+        CONSOLE_PASSWORD=$(openssl rand -base64 24 | tr -dc 'A-Za-z0-9' | cut -c1-24) \
+            || { fail 'Error generating a console password.'; }
+        echo "  Console credentials: ${CONSOLE_USER} / ${CONSOLE_PASSWORD}  <- generated, shown only here"
+    elif [ "$CONSOLE_PASSWORD" = "password" ]; then
+        echo "  Console credentials: ${CONSOLE_USER} / password  (default)"
+        echo "  WARNING: the console on 8443 signs client certificates for this fabric."
+        echo "  WARNING: with the default password, do not publish that port beyond 127.0.0.1."
+        echo "  WARNING: set DXL_CONSOLE_PASSWORD (or =random), or DXL_CONSOLE_ENABLED=false."
+    else
+        echo "  Console credentials: ${CONSOLE_USER} / (set from DXL_CONSOLE_PASSWORD)"
+    fi
+    # Through the environment rather than as awk -v, which would interpret a
+    # backslash in the password as an escape sequence.
+    CONSOLE_USER="$CONSOLE_USER" CONSOLE_PASSWORD="$CONSOLE_PASSWORD" \
+        awk 'BEGIN { u = ENVIRON["CONSOLE_USER"]; p = ENVIRON["CONSOLE_PASSWORD"] }
+             /^username=/ { print "username=" u; next }
+             /^password=/ { print "password=" p; next }
+             { print }' "$DVOL_CONSOLE_CONFIG_FILE" > "$DVOL_CONSOLE_CONFIG_FILE.new" \
+        || { fail 'Error setting console credentials.'; }
+    mv "$DVOL_CONSOLE_CONFIG_FILE.new" "$DVOL_CONSOLE_CONFIG_FILE" \
+        || { fail 'Error replacing the console configuration file.'; }
+else
+    echo "  Console: disabled (DXL_CONSOLE_ENABLED=false)"
+fi
+
+#
 # Create policy files
 #
 if [ ! -f $DVOL_GENERAL_POLICY_FILE ]; then
@@ -343,6 +400,8 @@ else
     rm -f $DVOL_BROKER_V3_EXT_FILE
 fi
 
-# Run the broker console
-cd $DXLBROKER_CONSOLE_DIR || { fail 'Unable to change to broker console directory.'; }
-/opt/dxlconsole/bin/python -m dxlconsole $DVOL_CONSOLE_CONFIG_DIR $BROKER_ID &
+# Run the broker console, unless it was switched off above
+if [ "$CONSOLE_ENABLED" = "true" ]; then
+    cd $DXLBROKER_CONSOLE_DIR || { fail 'Unable to change to broker console directory.'; }
+    /opt/dxlconsole/bin/python -m dxlconsole $DVOL_CONSOLE_CONFIG_DIR $BROKER_ID &
+fi
