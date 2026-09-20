@@ -39,7 +39,7 @@ bool dxl_main(
     bool* tlsEnabled, bool* tlsBridgingInsecure, bool* fipsEnabled,
     const char** clientCertChainFile, const char** brokerCertChainFile,
     const char** brokerKeyFile, 
-    const char** brokerCertFile, const char** ciphers,
+    const char** brokerCertFile, const char** ciphers, const char** tlsVersion,
     uint64_t* maxPacketBufferSize, int* listenPort, int* mosquittoLogType,
     unsigned int* mosquittoLogCategoryMask, int* messageSizeLimit, char** user,
     struct cert_hashes** brokerCertsUtHash,
@@ -49,7 +49,7 @@ bool dxl_main(
         argc, argv, tlsEnabled, tlsBridgingInsecure, fipsEnabled,
         clientCertChainFile, brokerCertChainFile,
         brokerKeyFile, 
-        brokerCertFile, ciphers, maxPacketBufferSize, listenPort, 
+        brokerCertFile, ciphers, tlsVersion, maxPacketBufferSize, listenPort, 
         mosquittoLogType, mosquittoLogCategoryMask, messageSizeLimit, user,
         brokerCertsUtHash,
         webSocketsEnabled, webSocketsListenPort );

@@ -454,6 +454,20 @@ void mosquitto_ws_init(struct mqtt3_config *config)
         lws_ctx_info.ssl_private_key_filepath = config->listeners[0].keyfile;
         lws_ctx_info.ssl_cipher_list = config->listeners[0].ciphers;
         lws_ctx_info.ssl_options_set = SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3 | SSL_OP_NO_COMPRESSION | SSL_OP_CIPHER_SERVER_PREFERENCE;
+        /* DXL: honour the listener's TLS protocol pin here too. libwebsockets
+         * takes OpenSSL options rather than a version range, so the versions
+         * outside the pin are switched off one by one. Without this the
+         * WebSockets listener would offer TLS 1.3 while the MQTT listener
+         * next to it is pinned to 1.2. */
+        if(config->listeners[0].tls_version){
+            if(!strcmp(config->listeners[0].tls_version, "tlsv1.3")){
+                lws_ctx_info.ssl_options_set |= SSL_OP_NO_TLSv1_2;
+            }else{
+#ifdef SSL_OP_NO_TLSv1_3
+                lws_ctx_info.ssl_options_set |= SSL_OP_NO_TLSv1_3;
+#endif
+            }
+        }
         lws_ctx_info.options |= LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT |
                         LWS_SERVER_OPTION_SKIP_SERVER_CANONICAL_NAME |
                         LWS_SERVER_OPTION_DISABLE_OS_CA_CERTS |

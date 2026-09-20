@@ -255,6 +255,7 @@ int main(int argc, char *argv[])
     const char* brokerKeyFile = NULL;
     const char* brokerCertFile = NULL; 
     const char* ciphers = NULL;
+    const char* tlsVersion = NULL;
     int listenPort = 8883;
     uint64_t maxPacketBufferSize;
     int mosquittoLogType = 0;
@@ -275,6 +276,7 @@ int main(int argc, char *argv[])
         &brokerKeyFile, 
         &brokerCertFile, 
         &ciphers,
+        &tlsVersion,
         &maxPacketBufferSize,
         &listenPort,
         &mosquittoLogType,
@@ -322,7 +324,7 @@ int main(int argc, char *argv[])
         &config, tlsEnabled, tlsBridgingInsecure,
         clientCertChainFile, brokerCertChainFile,
         brokerKeyFile, 
-        brokerCertFile, ciphers,
+        brokerCertFile, ciphers, tlsVersion,
         brokerCertsUtHash);
 
 

@@ -1185,6 +1185,8 @@ static const char* s_brokerKeyFile = NULL;
 static const char* s_brokerCertFile = NULL; 
 /** The ciphers */
 static const char* s_ciphers = NULL;
+/** The TLS protocol version the listeners are pinned to */
+static const char* s_tlsVersion = NULL;
 /** List of broker certificate hashes (SHA-1) */
 struct cert_hashes* s_brokerCerts = NULL;
 
@@ -1197,6 +1199,7 @@ struct cert_hashes* s_brokerCerts = NULL;
     const char* brokerKeyFile,
     const char* brokerCertFile,
     const char* ciphers,
+    const char* tlsVersion,
     struct cert_hashes* brokerCertsUtHash)
 {
     s_tlsEnabled = tlsEnabled;
@@ -1206,6 +1209,7 @@ struct cert_hashes* s_brokerCerts = NULL;
     s_brokerKeyFile = brokerKeyFile;
     s_brokerCertFile = brokerCertFile;
     s_ciphers = ciphers;
+    s_tlsVersion = tlsVersion;
 
     if(tlsEnabled){
         s_brokerCerts = brokerCertsUtHash;
@@ -1229,6 +1233,15 @@ struct cert_hashes* s_brokerCerts = NULL;
             if(strlen(ciphers) > 0){
                 if(config->listeners[i].ciphers) _mosquitto_free(config->listeners[i].ciphers);
                 config->listeners[i].ciphers = _mosquitto_strdup(ciphers);
+            }
+            /* DXL: the broker builds its listeners programmatically, so a
+             * tls_version= line in a mosquitto configuration file never
+             * reaches them. The broker setting tlsVersion does, and takes
+             * the same values (tlsv1.2, tlsv1.3, ...). Without it the
+             * listener negotiates the highest version both sides support. */
+            if(tlsVersion && strlen(tlsVersion) > 0){
+                if(config->listeners[i].tls_version) _mosquitto_free(config->listeners[i].tls_version);
+                config->listeners[i].tls_version = _mosquitto_strdup(tlsVersion);
             }
 
             // Require certificates always

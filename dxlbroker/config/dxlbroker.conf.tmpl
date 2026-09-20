@@ -82,8 +82,18 @@ topicRoutingCacheEnabled=true
 # short period of time. The delay minimizes churn.
 topicRoutingCacheClearDelay=30
 
-# The set of ciphers to restrict the broker to
+# The set of ciphers to restrict the broker to.
+# Note that this only covers TLS 1.2 and below: the TLS 1.3 suites are a
+# separate list that an OpenSSL cipher string does not address. Use
+# tlsVersion below to keep the listeners off TLS 1.3 altogether.
 ciphers=ECDH+AESGCM:DH+AESGCM:ECDH+AES256:DH+AES256:ECDH+AES128:DH+AES:RSA+AESGCM:CAMELLIA:RSA+AES:!3DES:!aNULL:!MD5
+
+# The TLS protocol version to pin the listeners (MQTT and WebSockets) to:
+# tlsv1.2 or tlsv1.3. Empty means negotiate the highest version that both
+# ends support, which is what a broker built against OpenSSL 3 or later
+# does by default. A Trellix DXL Broker 6.1.x cannot do TLS 1.3, so pin
+# tlsv1.2 when this broker stands in for one.
+tlsVersion=
 
 # Whether test mode is enabled
 testModeEnabled=false

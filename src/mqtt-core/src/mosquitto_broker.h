@@ -331,6 +331,7 @@ int mqtt3_config_update_tls(
     const char* brokerKeyFile,
     const char* brokerCertFile,
     const char* ciphers,
+    const char* tlsVersion,
     struct cert_hashes* brokerCertsUtHash );
 
 /**

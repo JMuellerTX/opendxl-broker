@@ -32,6 +32,7 @@ namespace broker {
  * @param   brokerKeyFile The broker key file (out)
  * @param   brokerCertFile The broker certificate file (out)
  * @param   ciphers The ciphers to restrict to (out)
+ * @param   tlsVersion The TLS protocol version to pin the listeners to (out)
  * @param   maxPacketBufferSize The maximum packet buffer size (out)
  * @param   listenPort The listener port (out)
  * @param   coreLogType The core log types (out)
@@ -48,7 +49,7 @@ bool brokerlib_main(
     bool* tlsEnabled, bool* tlsBridgingInsecure, bool* fipsEnabled,
     const char** clientCertChainFile, const char** brokerCertChainFile,
     const char** brokerKeyFile, 
-    const char** brokerCertFile, const char** ciphers,
+    const char** brokerCertFile, const char** ciphers, const char** tlsVersion,
     uint64_t* maxPacketBufferSize, int* listenPort, int* coreLogType,
     unsigned int* coreLogCategoryMask, int* messageSizeLimit, char** user,
     struct cert_hashes** brokerCertsUtHash,

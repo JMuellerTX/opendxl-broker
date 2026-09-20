@@ -77,6 +77,9 @@ int BrokerSettings::sm_certSignRetryMins = 5;
 // Ciphers
 string BrokerSettings::sm_ciphers;
 
+// TLS protocol version
+string BrokerSettings::sm_tlsVersion;
+
 // Message sampling
 int BrokerSettings::sm_messageSampleSecs = 60;
 
@@ -252,6 +255,7 @@ string BrokerSettings::dumpSettings()
     out << "\trevokedCertsFile: " << getRevokedCertsFile() << endl;
     out << "\tbrokerCertsListFile: " << getBrokerCertsListFile() << endl;
     out << "\tciphers: " << getCiphers() << endl;    
+    out << "\ttlsVersion: " << getTlsVersion() << endl;
     out << "\tmessageSample (Secs): " << getMessageSampleSecs() << endl;
     out << "\tmaximumPacketBufferSize: " << getMaxPacketBufferSize() << endl;    
     out << "\tisConnectionLimitIgnored: " << ( isConnectionLimitIgnored() ? "true" : "false" ) << endl;
@@ -373,6 +377,9 @@ void BrokerSettings::setValuesFromConfig( const Configuration& config )
 
     // Ciphers
     config.getProperty( "ciphers", sm_ciphers, "" );
+
+    // TLS protocol version (empty: negotiate the highest version available)
+    config.getProperty( "tlsVersion", sm_tlsVersion, "" );
 
     // Message sample secs
     config.getProperty( "messageSampleSecs", strValue, "60" );

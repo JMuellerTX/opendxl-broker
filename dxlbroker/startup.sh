@@ -187,16 +187,42 @@ fi
 # A user-provided ciphers= line in dxlbroker.conf still takes precedence
 # over the defaults file edited here.
 #
+# The cipher list only covers TLS 1.2 and below - the TLS 1.3 suites are a
+# separate list that an OpenSSL cipher string does not reach. Since this
+# broker builds against OpenSSL 3/4 it would otherwise negotiate TLS 1.3 in
+# every mode, including the two that exist to imitate a broker that cannot:
+# "legacy" (pre-6.1.1, OpenSSL 1.0.x) and "trellix-6.1" (measured 6.1.3.55).
+# Those two therefore pin tlsVersion=tlsv1.2; "modern" and "pfs-only" stay
+# open so the TLS 1.3 path of this fork remains testable.
+# DXL_TLS_VERSION overrides the pin (tlsv1.2, tlsv1.3, or empty for "any").
+#
 case "${DXL_TLS_MODE:-modern}" in
-    modern)   TLS_MODE_CIPHERS="ECDHE+AESGCM:ECDHE+AES:DHE+AES:AES128-SHA256:!aNULL:!eNULL:!MD5:!3DES" ;;
-    legacy)   TLS_MODE_CIPHERS="AES128-SHA256:AES256-SHA256:AES128-GCM-SHA256:AES256-GCM-SHA384:!aNULL:!eNULL" ;;
-    pfs-only) TLS_MODE_CIPHERS="ECDHE+AESGCM:ECDHE+AES:DHE+AES:!aNULL:!eNULL:!MD5:!3DES" ;;
-    trellix-6.1) TLS_MODE_CIPHERS="ECDHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-SHA384:ECDHE-RSA-AES128-SHA256:AES256-GCM-SHA384:AES128-GCM-SHA256:CAMELLIA256-SHA:CAMELLIA128-SHA:AES256-SHA256:AES256-SHA:AES128-SHA256:AES128-SHA" ;;
+    modern)   TLS_MODE_CIPHERS="ECDHE+AESGCM:ECDHE+AES:DHE+AES:AES128-SHA256:!aNULL:!eNULL:!MD5:!3DES"
+              TLS_MODE_VERSION="" ;;
+    legacy)   TLS_MODE_CIPHERS="AES128-SHA256:AES256-SHA256:AES128-GCM-SHA256:AES256-GCM-SHA384:!aNULL:!eNULL"
+              TLS_MODE_VERSION="tlsv1.2" ;;
+    pfs-only) TLS_MODE_CIPHERS="ECDHE+AESGCM:ECDHE+AES:DHE+AES:!aNULL:!eNULL:!MD5:!3DES"
+              TLS_MODE_VERSION="" ;;
+    trellix-6.1) TLS_MODE_CIPHERS="ECDHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-SHA384:ECDHE-RSA-AES128-SHA256:AES256-GCM-SHA384:AES128-GCM-SHA256:CAMELLIA256-SHA:CAMELLIA128-SHA:AES256-SHA256:AES256-SHA:AES128-SHA256:AES128-SHA"
+              TLS_MODE_VERSION="tlsv1.2" ;;
     *) fail "Unknown DXL_TLS_MODE '$DXL_TLS_MODE' (expected modern, legacy, pfs-only or trellix-6.1)." ;;
 esac
 TLS_CIPHERS="${DXL_TLS_CIPHERS:-$TLS_MODE_CIPHERS}"
+TLS_VERSION="${DXL_TLS_VERSION-$TLS_MODE_VERSION}"
+case "$TLS_VERSION" in
+    ""|tlsv1.2|tlsv1.3) ;;
+    *) fail "Unknown DXL_TLS_VERSION '$TLS_VERSION' (expected tlsv1.2, tlsv1.3 or empty)." ;;
+esac
 echo "  TLS cipher mode: ${DXL_TLS_MODE:-modern} (${TLS_CIPHERS})"
+echo "  TLS version: ${TLS_VERSION:-any (TLS 1.2 and up)}"
 sed -i "s|^ciphers=.*|ciphers=${TLS_CIPHERS}|" $DVOL_CONFIG_DEFAULTS_FILE     || { fail 'Error setting cipher list in config file.'; }
+if grep -q '^tlsVersion=' $DVOL_CONFIG_DEFAULTS_FILE; then
+    sed -i "s|^tlsVersion=.*|tlsVersion=${TLS_VERSION}|" $DVOL_CONFIG_DEFAULTS_FILE \
+        || { fail 'Error setting TLS version in config file.'; }
+else
+    printf '\n# The TLS protocol version the listeners are pinned to (DXL_TLS_VERSION)\ntlsVersion=%s\n' "$TLS_VERSION" >> $DVOL_CONFIG_DEFAULTS_FILE \
+        || { fail 'Error adding TLS version to config file.'; }
+fi
 
 #
 # Client connect/disconnect events (applied on every start, environment driven)

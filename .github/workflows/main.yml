@@ -39,11 +39,13 @@ jobs:
       # Host ports of the compose fabric (see docker-compose.test.yml)
       TRELLIX61_MGMT: 18443
       TRELLIX61_MQTT: 18883
+      TRELLIX61_WS: 18444
       MODERN_MGMT: 28443
       MODERN_MQTT: 28883
       MODERN_WS: 28444
       LEGACY_MGMT: 38443
       LEGACY_MQTT: 38883
+      LEGACY_WS: 38444
       PFSONLY_MGMT: 48443
       PFSONLY_MQTT: 48883
       PFSONLY_WS: 48444
@@ -75,6 +77,34 @@ jobs:
         docker compose -f docker-compose.test.yml up -d --wait
         docker compose -f docker-compose.test.yml ps
         docker exec dxl-modern openssl version
+
+    - name: TLS protocol ceiling per profile
+      # A cipher list only reaches TLS 1.2 and below - the TLS 1.3 suites are a
+      # separate list an OpenSSL cipher string does not address. A broker built
+      # against OpenSSL 3 or 4 therefore negotiates TLS 1.3 in every profile
+      # unless the profile pins the version, which made `legacy` and
+      # `trellix-6.1` - the two that exist to imitate brokers that cannot do
+      # TLS 1.3 at all - quietly unfaithful. This asserts the ceiling on both
+      # listeners of every profile, and that TLS 1.2 still works everywhere.
+      run: |
+        fail=0
+        offers() {
+          echo | openssl s_client -connect 127.0.0.1:"$1" -"$2" 2>&1 \
+            | grep -q "^New, ${2/tls1_/TLSv1.},"
+        }
+        for p in $TRELLIX61_MQTT $TRELLIX61_WS $LEGACY_MQTT $LEGACY_WS; do
+          if offers "$p" tls1_3; then echo "FAIL $p: negotiated TLS 1.3"; fail=1;
+          else echo "ok   $p: refuses TLS 1.3"; fi
+        done
+        for p in $MODERN_MQTT $MODERN_WS $PFSONLY_MQTT $PFSONLY_WS; do
+          if offers "$p" tls1_3; then echo "ok   $p: offers TLS 1.3";
+          else echo "FAIL $p: no TLS 1.3"; fail=1; fi
+        done
+        for p in $TRELLIX61_MQTT $MODERN_MQTT $LEGACY_MQTT $PFSONLY_MQTT; do
+          if offers "$p" tls1_2; then echo "ok   $p: offers TLS 1.2";
+          else echo "FAIL $p: no TLS 1.2"; fail=1; fi
+        done
+        exit $fail
 
     - name: Java client against `modern`
       run: |

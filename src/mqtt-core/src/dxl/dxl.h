@@ -35,6 +35,7 @@ extern int NID_dxlTenantGuid;
  * @param   brokerKeyFile The broker key file (out)
  * @param   brokerCertFile The broker certificate file (out)
  * @param   ciphers The ciphers to restrict to (out)
+ * @param   tlsVersion The TLS protocol version to pin the listeners to (out)
  * @param   maxPacketBufferSize The maximum packet buffer size (out)
  * @param   listenPort The broker listener port (out)
  * @param   mosquittoLogType The mosquitto log types (out)
@@ -51,7 +52,7 @@ bool dxl_main(
     bool* tlsEnabled, bool* tlsBridgingInsecure, bool* fipsEnabled,
     const char** clientCertChainFile, const char** brokerCertChainFile,
     const char** brokerKeyFile, 
-    const char** brokerCertFile, const char** ciphers,
+    const char** brokerCertFile, const char** ciphers, const char** tlsVersion,
     uint64_t* maxPacketBufferSize, int* listenPort, int* mosquittoLogType,
     unsigned int* mosquittoLogCategoryMask, int* messageSizeLimit, char** user,
     struct cert_hashes** brokerCertsUtHash,

@@ -296,6 +296,14 @@ public:
     static std::string getCiphers() { return sm_ciphers; }
 
     /**
+     * Returns the TLS protocol version the listeners are pinned to
+     *
+     * @return  The TLS protocol version ("tlsv1.2", "tlsv1.3", ...) or an
+     *          empty string to negotiate the highest version both sides support
+     */
+    static std::string getTlsVersion() { return sm_tlsVersion; }
+
+    /**
      * Returns the certificate signing retry interval (in minutes)
      *
      * @return  The certificate signing retry interval (in minutes)
@@ -627,6 +635,8 @@ private:
     static std::string sm_brokerCertsListFile;
     /** Ciphers */
     static std::string sm_ciphers;
+    /** TLS protocol version the listeners are pinned to */
+    static std::string sm_tlsVersion;
     /** Certificate signing retry interval */
     static int sm_certSignRetryMins;
 
