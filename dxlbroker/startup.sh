@@ -33,6 +33,7 @@ DVOL_CONSOLE_CONFIG_FILE=$DVOL_CONSOLE_CONFIG_DIR/dxlconsole.config
 DVOL_CONSOLE_LOGGING_FILE=$DVOL_CONSOLE_CONFIG_DIR/logging.config
 DVOL_CONSOLE_CLIENT_CONFIG_FILE=$DVOL_CONSOLE_CONFIG_DIR/dxlclient.config
 DVOL_CONSOLE_CLIENT_CONFIG_TMPL_FILE=$DVOL_CONSOLE_CONFIG_DIR/dxlclient.config.tmpl
+DVOL_CONSOLE_CRED_FILE=$DVOL_CONSOLE_CONFIG_DIR/console-credentials
 DVOL_POLICY_DIR=$DVOL/policy
 DVOL_KEYSTORE_DIR=$DVOL/keystore
 DVOL_LOGS_DIR=$DVOL/logs
@@ -137,18 +138,21 @@ fi
 # client certificate, so the fabric is protected by mutual TLS rather than by a
 # password. The console on 8443 is the exception, and it is the part that matters,
 # because the console holds the client CA and signs certificates - whoever reaches
-# it can mint an identity for the fabric.
+# it can mint an identity for the fabric. It therefore has no default password:
+# one is generated on first start and kept in the volume.
 #
 #   DXL_CONSOLE_ENABLED=false  do not start the console. The container then has no
 #                              credentials of any kind. Nothing can be provisioned
 #                              against it either, so bring your own certificates.
 #   DXL_CONSOLE_USER           console user (default: admin)
-#   DXL_CONSOLE_PASSWORD       console password. "random" generates one per
-#                              container and prints it once, here, at start.
+#   DXL_CONSOLE_PASSWORD       use this password instead of generating one. The
+#                              value "random" forces a new one even when the volume
+#                              already holds credentials.
 #
-# The default stays "password" so that the documented provisionconfig call and the
-# CI keep working against a throwaway broker on 127.0.0.1 - but it warns, because a
-# published 8443 with this default is a certificate authority open to the network.
+# Scripts should supply the password: `-e DXL_CONSOLE_PASSWORD=...` needs no
+# read-back and keeps the value out of the container log. For a container started
+# by hand, the generated password is printed once here and can be read back later
+# with `docker exec <container> /dxlbroker/console-credentials.sh`.
 #
 CONSOLE_ENABLED="${DXL_CONSOLE_ENABLED:-true}"
 case "$CONSOLE_ENABLED" in
@@ -158,21 +162,41 @@ esac
 
 if [ "$CONSOLE_ENABLED" = "true" ]; then
     CONSOLE_USER="${DXL_CONSOLE_USER:-admin}"
-    CONSOLE_PASSWORD="${DXL_CONSOLE_PASSWORD:-password}"
-    if [ "$CONSOLE_PASSWORD" = "random" ]; then
+    CONSOLE_PASSWORD="${DXL_CONSOLE_PASSWORD:-}"
+    CONSOLE_SOURCE=""
+
+    if [ -n "$CONSOLE_PASSWORD" ] && [ "$CONSOLE_PASSWORD" != "random" ]; then
+        CONSOLE_SOURCE="environment"
+    elif [ "$CONSOLE_PASSWORD" != "random" ] && [ -r "$DVOL_CONSOLE_CRED_FILE" ]; then
+        # A restart must not invalidate the password somebody wrote down.
+        CONSOLE_PASSWORD=$(sed -n 's/^password=//p' "$DVOL_CONSOLE_CRED_FILE" | head -1)
+        [ -n "$CONSOLE_PASSWORD" ] || CONSOLE_SOURCE="regenerate"
+        [ -n "$CONSOLE_PASSWORD" ] && CONSOLE_SOURCE="volume"
+    fi
+
+    if [ -z "$CONSOLE_SOURCE" ] || [ "$CONSOLE_SOURCE" = "regenerate" ]; then
         # Alphanumeric on purpose: it travels through configuration files, shell
         # history and a Basic auth header before anyone types it.
         CONSOLE_PASSWORD=$(openssl rand -base64 24 | tr -dc 'A-Za-z0-9' | cut -c1-24) \
             || { fail 'Error generating a console password.'; }
-        echo "  Console credentials: ${CONSOLE_USER} / ${CONSOLE_PASSWORD}  <- generated, shown only here"
-    elif [ "$CONSOLE_PASSWORD" = "password" ]; then
-        echo "  Console credentials: ${CONSOLE_USER} / password  (default)"
-        echo "  WARNING: the console on 8443 signs client certificates for this fabric."
-        echo "  WARNING: with the default password, do not publish that port beyond 127.0.0.1."
-        echo "  WARNING: set DXL_CONSOLE_PASSWORD (or =random), or DXL_CONSOLE_ENABLED=false."
-    else
-        echo "  Console credentials: ${CONSOLE_USER} / (set from DXL_CONSOLE_PASSWORD)"
+        CONSOLE_SOURCE="generated"
     fi
+
+    case "$CONSOLE_SOURCE" in
+        generated)
+            echo "  Console credentials: ${CONSOLE_USER} / ${CONSOLE_PASSWORD}"
+            echo "  ^ generated for this volume and shown only here. Read it back later with:"
+            echo "      docker exec <container> /dxlbroker/console-credentials.sh"
+            ;;
+        volume)
+            echo "  Console credentials: ${CONSOLE_USER} / (kept from the volume)"
+            echo "      docker exec <container> /dxlbroker/console-credentials.sh"
+            ;;
+        environment)
+            echo "  Console credentials: ${CONSOLE_USER} / (supplied via DXL_CONSOLE_PASSWORD)"
+            ;;
+    esac
+
     # Through the environment rather than as awk -v, which would interpret a
     # backslash in the password as an escape sequence.
     CONSOLE_USER="$CONSOLE_USER" CONSOLE_PASSWORD="$CONSOLE_PASSWORD" \
@@ -183,8 +207,20 @@ if [ "$CONSOLE_ENABLED" = "true" ]; then
         || { fail 'Error setting console credentials.'; }
     mv "$DVOL_CONSOLE_CONFIG_FILE.new" "$DVOL_CONSOLE_CONFIG_FILE" \
         || { fail 'Error replacing the console configuration file.'; }
+
+    # Written every start, including when the password came from the environment,
+    # so console-credentials.sh answers the same way whatever the source was.
+    ( umask 077 && CONSOLE_USER="$CONSOLE_USER" CONSOLE_PASSWORD="$CONSOLE_PASSWORD" \
+        awk 'BEGIN {
+                 print "# Console credentials for this volume. Read with:"
+                 print "#   docker exec <container> /dxlbroker/console-credentials.sh"
+                 print "user=" ENVIRON["CONSOLE_USER"]
+                 print "password=" ENVIRON["CONSOLE_PASSWORD"]
+             }' < /dev/null > "$DVOL_CONSOLE_CRED_FILE" ) \
+        || { fail 'Error writing the console credentials file.'; }
 else
     echo "  Console: disabled (DXL_CONSOLE_ENABLED=false)"
+    rm -f "$DVOL_CONSOLE_CRED_FILE"
 fi
 
 #

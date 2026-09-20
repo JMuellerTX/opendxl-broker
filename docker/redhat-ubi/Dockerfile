@@ -165,6 +165,7 @@ RUN useradd -d /dxlbroker -c "" dxl \
 RUN chmod +x /dxlbroker/startup.sh
 RUN chmod +x /dxlbroker/startup_as_root.sh
 RUN chmod +x /dxlbroker/healthcheck.sh
+RUN chmod +x /dxlbroker/console-credentials.sh
 
 # Readiness: a test harness needs to know when the listener actually negotiates
 # TLS, which is several seconds after the process starts. "docker run --wait"

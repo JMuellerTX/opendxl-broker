@@ -73,7 +73,14 @@ jobs:
         docker image ls $DXL_BROKER_IMAGE
 
     - name: Start the test fabric (four TLS profiles)
+      # The console has no default password: the image generates one per volume.
+      # A test run supplies one instead, which is both the secure and the simpler
+      # option - no reading four generated passwords back out of four containers.
       run: |
+        pw=$(openssl rand -hex 16)
+        echo "::add-mask::$pw"
+        echo "DXL_CONSOLE_PASSWORD=$pw" >> "$GITHUB_ENV"
+        export DXL_CONSOLE_PASSWORD="$pw"
         docker compose -f docker-compose.test.yml up -d --wait
         docker compose -f docker-compose.test.yml ps
         docker exec dxl-modern openssl version
@@ -111,7 +118,7 @@ jobs:
         git clone --recursive https://github.com/JMuellerTX/opendxl-client-java.git
         cd opendxl-client-java
         ./gradlew assemble --console=plain
-        java -jar ./build/libs/dxlclient*all.jar provisionconfig clientconfig 127.0.0.1 client -t $MODERN_MGMT -u admin -p password --insecure
+        java -jar ./build/libs/dxlclient*all.jar provisionconfig clientconfig 127.0.0.1 client -t $MODERN_MGMT -u admin -p "$DXL_CONSOLE_PASSWORD" --insecure
         sed -i -e "s/127.0.0.1;127.0.0.1/127.0.0.1/g" -e "/local/d" -e "/docker/d" \
                -e "s/;8883;/;$MODERN_MQTT;/" -e "s/;443;/;$MODERN_WS;/" clientconfig/dxlclient.config
         cat clientconfig/dxlclient.config
@@ -130,7 +137,7 @@ jobs:
         pip install ".[test]"
         # The CLI validates the management server's certificate by default; the
         # fabric's brokers use a generated CA, so skip validation here.
-        python -m dxlclient provisionconfig ../pfsonly-config 127.0.0.1 client -t $PFSONLY_MGMT -u admin -p password --insecure
+        python -m dxlclient provisionconfig ../pfsonly-config 127.0.0.1 client -t $PFSONLY_MGMT -u admin -p "$DXL_CONSOLE_PASSWORD" --insecure
         cp ../pfsonly-config/dxlclient.config ../pfsonly-config/client_config.cfg
         sed -i -e "s/127.0.0.1;127.0.0.1/127.0.0.1/g" -e "/local/d" -e "/docker/d" \
                -e "s/;8883;/;$PFSONLY_MQTT;/" -e "s/;443;/;$PFSONLY_WS;/" ../pfsonly-config/client_config.cfg
@@ -146,7 +153,7 @@ jobs:
       run: |
         cd py-master
         . .venv/bin/activate
-        python -m dxlclient provisionconfig ../trellix61-config 127.0.0.1 client -t $TRELLIX61_MGMT -u admin -p password --insecure
+        python -m dxlclient provisionconfig ../trellix61-config 127.0.0.1 client -t $TRELLIX61_MGMT -u admin -p "$DXL_CONSOLE_PASSWORD" --insecure
         cp ../trellix61-config/dxlclient.config ../trellix61-config/client_config.cfg
         sed -i -e "s/127.0.0.1;127.0.0.1/127.0.0.1/g" -e "/local/d" -e "/docker/d"                -e "s/;8883;/;$TRELLIX61_MQTT;/" ../trellix61-config/client_config.cfg
         cat ../trellix61-config/client_config.cfg
@@ -159,7 +166,7 @@ jobs:
         python -m venv .venv && . .venv/bin/activate
         pip install --upgrade pip wheel
         pip install ".[test]"
-        python -m dxlclient provisionconfig ../legacy-config 127.0.0.1 client -t $LEGACY_MGMT -u admin -p password --insecure
+        python -m dxlclient provisionconfig ../legacy-config 127.0.0.1 client -t $LEGACY_MGMT -u admin -p "$DXL_CONSOLE_PASSWORD" --insecure
         cp ../legacy-config/dxlclient.config ../legacy-config/client_config.cfg
         sed -i -e "s/127.0.0.1;127.0.0.1/127.0.0.1/g" -e "/local/d" -e "/docker/d" \
                -e "s/;8883;/;$LEGACY_MQTT;/" ../legacy-config/client_config.cfg
