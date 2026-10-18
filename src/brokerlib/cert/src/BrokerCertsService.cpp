@@ -102,13 +102,17 @@ static string lookupCertExtension( int asn1nid )
                     if( octet_str )
                     {
                         const unsigned char* octet_str_data = ASN1_STRING_get0_data( octet_str );
-                        if( octet_str_data )
+                        const int octet_len = ASN1_STRING_length( octet_str );
+                        if( octet_str_data && octet_len > 0 )
                         {
-                            long xlen;
-                            int tag, xclass;
-                            /*int ret =*/ ASN1_get_object( &octet_str_data, &xlen, &tag, &xclass,
-                                ASN1_STRING_length( octet_str ) );
-                            retVal = (char*)octet_str_data;
+                            const unsigned char* p = octet_str_data;
+                            long xlen = 0;
+                            int tag = 0, xclass = 0;
+                            int asn1_ret = ASN1_get_object( &p, &xlen, &tag, &xclass, octet_len );
+                            if( ( asn1_ret & 0x80 ) == 0 && xlen >= 0 && xlen <= ( octet_str_data + octet_len - p ) )
+                            {
+                                retVal.assign( (const char*)p, strnlen( (const char*)p, (size_t)xlen ) );
+                            }
                         }
                     }
                 }

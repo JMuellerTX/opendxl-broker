@@ -269,21 +269,31 @@ int mosquitto_process_client_certificate(X509_STORE_CTX *ctx, struct mosquitto *
                         const ASN1_OCTET_STRING* octet_str = X509_EXTENSION_get_data(ext);
                         if(octet_str){
                             const unsigned char* octet_str_data = ASN1_STRING_get0_data(octet_str);
-                            if(octet_str_data){
-                                long xlen;
-                                int tag, xclass;
-                                /*int ret =*/ ASN1_get_object(&octet_str_data, &xlen, &tag, &xclass,
-                                    ASN1_STRING_length(octet_str));
-                                if(nid == NID_dxlClientGuid){
-                                    context->dxl_client_guid = _mosquitto_strdup((char*)octet_str_data);
-                                }else{
-                                    context->dxl_tenant_guid = _mosquitto_strdup((char*)octet_str_data);
+                            const int octet_len = ASN1_STRING_length(octet_str);
+                            if(octet_str_data && octet_len > 0){
+                                const unsigned char* p = octet_str_data;
+                                long xlen = 0;
+                                int tag = 0, xclass = 0;
+                                int asn1_ret = ASN1_get_object(&p, &xlen, &tag, &xclass, octet_len);
+                                if((asn1_ret & 0x80) == 0 && xlen >= 0 && xlen <= (octet_str_data + octet_len - p)){
+                                    size_t copy_len = strnlen((const char*)p, (size_t)xlen);
+                                    char* guid_copy = (char*)_mosquitto_calloc(copy_len + 1, sizeof(char));
+                                    if(guid_copy){
+                                        memcpy(guid_copy, p, copy_len);
+                                        if(nid == NID_dxlClientGuid){
+                                            _mosquitto_free(context->dxl_client_guid);
+                                            context->dxl_client_guid = guid_copy;
+                                        }else{
+                                            _mosquitto_free(context->dxl_tenant_guid);
+                                            context->dxl_tenant_guid = guid_copy;
 
-                                    // Check to see if tenant limit has been exceeded
-                                    if(dxl_update_sent_byte_count(context, 0) ||
-                                        !dxl_is_tenant_connection_allowed(context)){
-                                        // Has exceeded limit
-                                        succeeded = 0;
+                                            // Check to see if tenant limit has been exceeded
+                                            if(dxl_update_sent_byte_count(context, 0) ||
+                                                !dxl_is_tenant_connection_allowed(context)){
+                                                // Has exceeded limit
+                                                succeeded = 0;
+                                            }
+                                        }
                                     }
                                 }
                             }

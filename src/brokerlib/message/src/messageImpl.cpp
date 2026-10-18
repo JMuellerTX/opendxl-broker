@@ -1006,10 +1006,14 @@ dxl_message_error_t unpackUInt32(msgpack_unpacker *unpack, uint32_t * value)
         return DXLMP_INIT_FAILED;
     }
 
-    if ( result.data.type != MSGPACK_OBJECT_POSITIVE_INTEGER )
+    if ( result.data.type != MSGPACK_OBJECT_POSITIVE_INTEGER &&
+        result.data.type != MSGPACK_OBJECT_NEGATIVE_INTEGER )
+    {
+        msgpack_unpacked_destroy(&result);
         return DXLMP_BAD_DATA;
+    }
 
-    *value = (uint32_t)result.data.via.u64;
+    *value = (uint32_t)result.data.via.i64;
 
     ret = DXLMP_OK;
 
@@ -1066,7 +1070,8 @@ dxl_message_error_t unpackRaw(msgpack_unpacker *unpack,
         return DXLMP_INIT_FAILED;
     }
 
-    if ( result.data.type != MSGPACK_OBJECT_STR /*RAW in previous versions*/ )
+    if ( result.data.type != MSGPACK_OBJECT_STR /*RAW in previous versions*/ &&
+        result.data.type != MSGPACK_OBJECT_BIN )
     {
         msgpack_unpacked_destroy(&result);
         return DXLMP_BAD_DATA;
@@ -1125,6 +1130,15 @@ static dxl_message_error_t unpackStringArray(msgpack_unpacker *unpack,
 
         for( i = 0; i < mpArraySize; i++ )
         {
+            if( result.data.via.array.ptr[i].type != MSGPACK_OBJECT_STR &&
+                result.data.via.array.ptr[i].type != MSGPACK_OBJECT_BIN )
+            {
+                freeStringArray( *stringArray, i );
+                msgpack_unpacked_destroy( &result );
+                *stringArray = NULL;
+                *stringArraySize = 0;
+                return DXLMP_BAD_DATA;
+            }
             (*stringArray)[i] = (char*)calloc(result.data.via.array.ptr[i].via.bin.size+1,sizeof(char));
             if( !((*stringArray)[i]) )
             {
