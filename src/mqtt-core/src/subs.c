@@ -298,7 +298,8 @@ static int _sub_add_full_topic(struct mosquitto_db *db, struct mosquitto *contex
     // DXL Begin
     _add_topic_to_path(subhier, fulltopic, fulltopiclen, depth);
 
-    if( dxl_is_multi_tenant_mode_enabled() &&
+    if( context &&
+        dxl_is_multi_tenant_mode_enabled() &&
         !( context->dxl_flags & DXL_FLAG_OPS ) &&
         !dxl_is_tenant_subscription_allowed( context ) )
     {

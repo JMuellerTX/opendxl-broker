@@ -99,11 +99,24 @@ bool ServiceRegistryRegisterRequestHandler::onStoreMessage(
                 context->isSourceOps() ||
                 TenantMetricsService::getInstance().isServiceRegistrationAllowed( reg->getClientTenantGuid().c_str() ) )
     {
-        // Register the service
-        ServiceRegistry::getInstance().registerService( reg );
+        try
+        {
+            // Register the service
+            ServiceRegistry::getInstance().registerService( reg );
 
-        // Send a response to the invoking client
-        response = messageService.createResponse( request );
+            // Send a response to the invoking client
+            response = messageService.createResponse( request );
+        }
+        catch( const exception& ex )
+        {
+            SL_START << "Error registering service (" << reg->getServiceGuid()
+                << "): " << ex.what() << SL_ERROR_END;
+            response = messageService.createErrorResponse(
+                request,
+                FABRICSERVICEUNAVAILABLE,
+                ex.what()
+            );
+        }
     }
     else
     {

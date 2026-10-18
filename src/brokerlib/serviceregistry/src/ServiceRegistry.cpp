@@ -107,6 +107,11 @@ void ServiceRegistry::decLocalSvc( serviceRegistrationPtr_t reg )
 /** {@inheritDoc} */
 void ServiceRegistry::registerService( serviceRegistrationPtr_t reg )
 {    
+    if( reg->getServiceGuid().empty() )
+    {
+        throw runtime_error( "Empty service GUID" );
+    }
+
     serviceRegistrationPtr_t existingReg = findService( reg->getServiceGuid() );
     bool regExists = existingReg.get() != 0;
 
@@ -126,18 +131,19 @@ void ServiceRegistry::registerService( serviceRegistrationPtr_t reg )
         }
         else 
         {    
-            // The client GUIDs do not match the registered service, ignoring the registration
+            // The client GUIDs do not match the registered service, reject the registration
             if( SL_LOG.isInfoEnabled() )
                 SL_START << "The service could not be updated, its client-related GUIDS do not match: "
                     << " serviceGuid=" << reg->getServiceGuid() 
                     << ", clientGuid=" << existingReg->getClientGuid() << ":" << reg->getClientGuid()
                     << ", clientTenantGuid=" << existingReg->getClientTenantGuid() << ":" << reg->getClientTenantGuid()                    
                     <<  SL_INFO_END;            
-            return;
+            throw runtime_error( "Service registration client/tenant GUID mismatch" );
         }
     }
 
-    if( !BrokerSettings::isMultiTenantModeEnabled() || reg->isOps() )
+    if( ( !BrokerSettings::isMultiTenantModeEnabled() || reg->isOps() ) &&
+        ( reg->isOps() || reg->isManaged() ) )
     {
         // Check for event to request related properties
         addEventToRequestPrefix( reg );
@@ -159,11 +165,11 @@ void ServiceRegistry::unregisterService( const std::string& serviceGuid, bool fi
     if( reg.get() )
     {
         doUnregisterService( reg, fireEvent );
-    }
 
-    if( BrokerSettings::isMultiTenantModeEnabled() && !reg->isOps() )
-    {
-        TenantMetricsService::getInstance().updateTenantServiceCount( reg->getClientTenantGuid().c_str(), -1 );
+        if( BrokerSettings::isMultiTenantModeEnabled() && !reg->isOps() )
+        {
+            TenantMetricsService::getInstance().updateTenantServiceCount( reg->getClientTenantGuid().c_str(), -1 );
+        }
     }
 }
 
@@ -574,7 +580,8 @@ void ServiceRegistry::rebuildEventToRequestPrefixMap()
     for( auto serviceIter = m_servicesById.begin(); 
             serviceIter != m_servicesById.end(); serviceIter++ )
     {
-        if( !BrokerSettings::isMultiTenantModeEnabled() || serviceIter->second->isOps() )
+        if( ( !BrokerSettings::isMultiTenantModeEnabled() || serviceIter->second->isOps() ) &&
+            ( serviceIter->second->isOps() || serviceIter->second->isManaged() ) )
         {
             addEventToRequestPrefix( serviceIter->second );
         }
@@ -584,6 +591,11 @@ void ServiceRegistry::rebuildEventToRequestPrefixMap()
 /** {@inheritDoc} */
 void ServiceRegistry::addEventToRequestPrefix( const serviceRegistrationPtr_t& regPtr )
 {
+    if( !regPtr->isOps() && !regPtr->isManaged() )
+    {
+        return;
+    }
+
     const unordered_map<std::string, std::string> md = regPtr->getMetaData();
 
     auto eventToRequestPrefix = md.find( EVENT_TO_REQUEST_PREFIX_PROP );
@@ -594,11 +606,20 @@ void ServiceRegistry::addEventToRequestPrefix( const serviceRegistrationPtr_t& r
         {
             if( strncmp( mdItr->first.c_str(), EVENT_TO_REQUEST_TOPIC_PROP, topicLen ) == 0 )
             {
+                const std::string& eventTopic = mdItr->second;
+                if( eventTopic.empty() ||
+                    eventTopic.find( '#' ) != std::string::npos ||
+                    eventTopic.find( '+' ) != std::string::npos ||
+                    strncmp( eventTopic.c_str(), DXL_BROKER_EVENT_PREFIX, DXL_BROKER_EVENT_PREFIX_LEN ) == 0 )
+                {
+                    continue;
+                }
+
                 // Add event to request prefix
-                m_eventToRequestPrefix[ mdItr->second ] = eventToRequestPrefix->second;
+                m_eventToRequestPrefix[ eventTopic ] = eventToRequestPrefix->second;
 
                 if( SL_LOG.isDebugEnabled() )
-                    SL_START << "Added event to request: " <<  mdItr->second <<
+                    SL_START << "Added event to request: " <<  eventTopic <<
                         " = " << eventToRequestPrefix->second <<
                         ", mapSize: " << m_eventToRequestPrefix.size() << SL_DEBUG_END;
             }

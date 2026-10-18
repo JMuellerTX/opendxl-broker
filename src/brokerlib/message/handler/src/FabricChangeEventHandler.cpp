@@ -19,12 +19,15 @@ using namespace dxl::broker::service;
 
 /** {@inheritDoc} */
 bool FabricChangeEventHandler::onStoreMessage(
-        CoreMessageContext* /*context*/, struct cert_hashes* /*certHashes*/ ) const
+        CoreMessageContext* context, struct cert_hashes* /*certHashes*/ ) const
 {
     if( SL_LOG.isDebugEnabled() )
     {
         SL_START << "FabricChangeEventHandler::onStoreMessage" << SL_DEBUG_END;
     }
+
+    // Ensure the message is a DXL event
+    context->getDxlEvent();
 
     // Send the broker state event
     getCoreInterface()->sendLocalBrokerStateEvent();

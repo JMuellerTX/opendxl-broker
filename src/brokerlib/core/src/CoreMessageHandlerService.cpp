@@ -123,6 +123,23 @@ void CoreMessageHandlerService::onStoreMessage(
         {
             dxlMessage = context->getDxlMessage();
 
+            if( !context->isSourceBridge() && dxlMessage->isRequestMessage() )
+            {
+                DxlRequest* req = context->getDxlRequest();
+                const char* replyTo = req ? req->getReplyToTopic() : NULL;
+                if( !replyTo || replyTo[0] == '\0' ||
+                    !strncmp( replyTo, DXL_BROKER_EVENT_PREFIX, strlen( DXL_BROKER_EVENT_PREFIX ) ) ||
+                    !strncmp( replyTo, "/mcafee/service/", strlen( "/mcafee/service/" ) ) ||
+                    strchr( replyTo, '#' ) != NULL ||
+                    strchr( replyTo, '+' ) != NULL )
+                {
+                    SL_START << "Rejecting request message with invalid replyToTopic: "
+                        << ( replyTo ? replyTo : "<null>" ) << SL_ERROR_END;
+                    context->setMessageInsertEnabled( false );
+                    return;
+                }
+            }
+
             // Set DXL message fields appropriately (clientId, tenantId, etc.)
             if( !setDxlMessageFields( context, sourceTenantGuid, dxlMessage, certChain ) )
             {

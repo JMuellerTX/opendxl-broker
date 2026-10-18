@@ -284,6 +284,13 @@ public:
     bool isManagedClient() const { return m_managedClient; } 
 
     /**
+     * Whether the service is associated with a managed client
+     *
+     * @return  Whether the service is associated with a managed client
+     */
+    bool isManaged() const { return m_managedClient; }
+
+    /**
      * Sets whether the service is associated with a managed client
      *
      * @param   isManagedClient Whether the service is associated with a managed client

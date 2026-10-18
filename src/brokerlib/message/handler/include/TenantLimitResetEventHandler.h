@@ -25,7 +25,7 @@ public:
     virtual ~TenantLimitResetEventHandler() {}
 
     /** {@inheritDoc} */
-    bool isBridgeSourceRequired() const { return false; }
+    bool isBridgeSourceRequired() const { return true; }
 
     /** {@inheritDoc} */
     bool onStoreMessage( dxl::broker::core::CoreMessageContext* context,

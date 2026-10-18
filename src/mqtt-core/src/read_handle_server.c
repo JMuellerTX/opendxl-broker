@@ -373,6 +373,15 @@ int mqtt3_handle_connect(struct mosquitto_db *db, struct mosquitto *context)
             rc = 1;
             goto handle_connect_error;
         }
+#ifdef DXL
+        will_retain = 0;
+        will_qos = 0;
+        if(!strncmp(will_topic, "/mcafee/event/dxl/", strlen("/mcafee/event/dxl/"))){
+            mqtt3_context_disconnect(db, context);
+            rc = MOSQ_ERR_PROTOCOL;
+            goto handle_connect_error;
+        }
+#endif
 
         if(_mosquitto_read_uint16(&context->in_packet, &will_payloadlen)){
             mqtt3_context_disconnect(db, context);

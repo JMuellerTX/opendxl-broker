@@ -29,6 +29,9 @@ bool TenantLimitResetEventHandler::onStoreMessage(
         return false;
     }
 
+    // Ensure the message is a DXL event
+    context->getDxlEvent();
+
     // Reset tenant limits
     TenantMetricsService::getInstance().resetTenantByteCounts();
 

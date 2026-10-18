@@ -37,9 +37,19 @@ bool ServiceRegistryRegisterEventHandler::onStoreMessage(
         JsonService::getInstance().fromJson( evt->getPayloadStr(), registerEventPayload );
 
         // Register the service
-        ServiceRegistry::getInstance().registerService( 
-            shared_ptr<ServiceRegistration>( 
-                new ServiceRegistration( registerEventPayload.getServiceRegistration() ) ) );
+        try
+        {
+            ServiceRegistry::getInstance().registerService( 
+                shared_ptr<ServiceRegistration>( 
+                    new ServiceRegistration( registerEventPayload.getServiceRegistration() ) ) );
+        }
+        catch( const exception& ex )
+        {
+            SL_START << "Ignoring invalid service registration event ("
+                << registerEventPayload.getServiceRegistration().getServiceGuid()
+                << "): " << ex.what() << SL_WARN_END;
+            return false;
+        }
     }
 
     // propagate event

@@ -25,6 +25,9 @@ public:
     virtual ~RevocationListEventHandler() {}
 
     /** {@inheritDoc} */
+    bool isBridgeSourceRequired() const { return true; }
+
+    /** {@inheritDoc} */
     bool onStoreMessage( dxl::broker::core::CoreMessageContext* context,
         struct cert_hashes *certHashes ) const;
 };
