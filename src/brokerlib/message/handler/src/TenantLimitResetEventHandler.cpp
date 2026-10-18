@@ -14,11 +14,19 @@ using namespace dxl::broker::core;
 
 /** {@inheritDoc} */
 bool TenantLimitResetEventHandler::onStoreMessage(
-    CoreMessageContext* /*context*/, struct cert_hashes* /*certHashes*/ ) const
+    CoreMessageContext* context, struct cert_hashes* /*certHashes*/ ) const
 {
     if( SL_LOG.isDebugEnabled() )
     {
         SL_START << "TenantLimitResetEventHandler::onStoreMessage" << SL_DEBUG_END;
+    }
+
+    if( !context->isSourceBridge() && !context->isSourceOps() &&
+        !( context->getContextFlags() & ( DXL_FLAG_LOCAL | DXL_FLAG_ADMIN ) ) )
+    {
+        SL_START << "A non-broker/non-ops client attempted to publish a tenant limit reset event ("
+            << context->getSourceId() << ")" << SL_ERROR_END;
+        return false;
     }
 
     // Reset tenant limits

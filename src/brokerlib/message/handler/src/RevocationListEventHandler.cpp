@@ -22,6 +22,14 @@ bool RevocationListEventHandler::onStoreMessage(
         SL_START << "RevocationListEventHandler::onStoreMessage" << SL_DEBUG_END;
     }
 
+    if( !context->isSourceBridge() && !context->isSourceOps() &&
+        !( context->getContextFlags() & ( DXL_FLAG_LOCAL | DXL_FLAG_ADMIN ) ) )
+    {
+        SL_START << "A non-broker/non-ops client attempted to publish a revocation list event ("
+            << context->getSourceId() << ")" << SL_ERROR_END;
+        return false;
+    }
+
     // Get the DXL event
     DxlEvent* evt = context->getDxlEvent();
 
@@ -32,8 +40,16 @@ bool RevocationListEventHandler::onStoreMessage(
     string cert;
     istringstream iss(evt->getPayloadStr());    
     while( getline( iss, cert ) )
-    {        
-        revService.addCertificate( cert.c_str() );
+    {
+        while( !cert.empty() &&
+            ( cert[cert.size() - 1] == '\r' || cert[cert.size() - 1] == ' ' || cert[cert.size() - 1] == '\t' ) )
+        {
+            cert.erase( cert.size() - 1 );
+        }
+        if( !cert.empty() )
+        {
+            revService.addCertificate( cert.c_str() );
+        }
     }
     
     // propagate event

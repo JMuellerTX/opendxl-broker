@@ -117,9 +117,10 @@ void ServiceRegistry::registerService( serviceRegistrationPtr_t reg )
     }
     else
     {
-        // If the service already exists, and the tenant guids match, 
+        // If the service already exists, and the client and tenant guids match, 
         // attempt to update it.
-        if( reg->getClientTenantGuid() == existingReg->getClientTenantGuid() )
+        if( ( reg->getClientGuid() == existingReg->getClientGuid() ) &&
+            ( reg->getClientTenantGuid() == existingReg->getClientTenantGuid() ) )
         {
             updateService( existingReg, reg );
         }
@@ -129,6 +130,7 @@ void ServiceRegistry::registerService( serviceRegistrationPtr_t reg )
             if( SL_LOG.isInfoEnabled() )
                 SL_START << "The service could not be updated, its client-related GUIDS do not match: "
                     << " serviceGuid=" << reg->getServiceGuid() 
+                    << ", clientGuid=" << existingReg->getClientGuid() << ":" << reg->getClientGuid()
                     << ", clientTenantGuid=" << existingReg->getClientTenantGuid() << ":" << reg->getClientTenantGuid()                    
                     <<  SL_INFO_END;            
             return;
@@ -326,7 +328,7 @@ void ServiceRegistry::updateService( serviceRegistrationPtr_t existingReg, const
 }
 
 /** {@inheritDoc} */
-inline serviceRegistrationPtr_t ServiceRegistry::findService( const std::string& serviceGuid ) const
+serviceRegistrationPtr_t ServiceRegistry::findService( const std::string& serviceGuid ) const
 {
     auto iter = m_servicesById.find( serviceGuid );
     if( iter != m_servicesById.end() )

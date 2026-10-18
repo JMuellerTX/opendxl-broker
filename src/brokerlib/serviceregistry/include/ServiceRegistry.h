@@ -95,6 +95,14 @@ public:
     void doUnregisterService( serviceRegistrationPtr_t reg, bool fireEvent );
 
     /**
+     * Finds the service with the specified GUID
+     *
+     * @param   serviceGuid The GUID of the service
+     * @return  The service or an empty pointer
+     */
+    serviceRegistrationPtr_t findService( const std::string& serviceGuid ) const;
+
+    /**
      * Finds the service with the specified GUID and the specified tenant GUID
      *
      * @param   serviceGuid The GUID of the service
@@ -251,14 +259,6 @@ private:
      * @param   reg The new service registration
      */
     void updateService( serviceRegistrationPtr_t existingReg, const serviceRegistrationPtr_t reg );
-
-    /**
-     * Finds the service with the specified GUID
-     *
-     * @param   serviceGuid The GUID of the service
-     * @return  The service or an empty pointer
-     */
-    serviceRegistrationPtr_t findService( const std::string& serviceGuid ) const;
 
     /** Service registrations by service identifier */
     unordered_map<std::string, serviceRegistrationPtr_t> m_servicesById;

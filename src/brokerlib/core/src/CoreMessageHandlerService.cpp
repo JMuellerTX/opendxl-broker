@@ -146,6 +146,19 @@ void CoreMessageHandlerService::onStoreMessage(
         {            
             fireOnStoreMessage( context, certHashes, it->second );
         }
+        else if( !context->isSourceBridge() &&
+            !strncmp( topic, DXL_BROKER_EVENT_PREFIX, DXL_BROKER_EVENT_PREFIX_LEN ) )
+        {
+            bool allowTestTopic = BrokerSettings::isTestModeEnabled() && (
+                !strcmp( topic, DxlMessageConstants::CHANNEL_DXL_DUMPBROKER_STATE_EVENT ) ||
+                !strcmp( topic, DxlMessageConstants::CHANNEL_DXL_DUMPSERVICE_STATE_EVENT ) );
+            if( !allowTestTopic )
+            {
+                SL_START << "A non-broker attempted to publish a broker-only message (" <<
+                    context->getTopic() << ")" << SL_ERROR_END;
+                context->setMessageInsertEnabled( false );
+            }
+        }
 
         // Rewrite message if it was modified
         if( dxlMessage && dxlMessage->isDirty() )
@@ -439,11 +452,8 @@ bool CoreMessageHandlerService::setDxlMessageFields(
         message->setSourceBrokerGuid( BrokerSettings::getGuid() );
         message->setSourceClientId( context->getCanonicalSourceId() );    
         message->setSourceClientInstanceId( context->getSourceId() );
-        if( certChain )
-        {
-            // Set the certificates
-            message->setOtherField( "dxl.certs", certChain );
-        }
+        // Always overwrite dxl.certs so a client-supplied value cannot survive when certChain is NULL
+        message->setOtherField( "dxl.certs", certChain ? certChain : "" );
         
         if( SL_LOG.isDebugEnabled() )
         {

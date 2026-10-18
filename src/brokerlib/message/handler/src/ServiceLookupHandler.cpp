@@ -216,7 +216,7 @@ bool ServiceLookupHandler::handleEvent( CoreMessageContext* context, DxlEvent* d
 
 /** {@inheritDoc} */
 bool ServiceLookupHandler::handleErrorResponse( 
-    CoreMessageContext* /* context */, DxlErrorResponse* errorResponse ) const
+    CoreMessageContext* context, DxlErrorResponse* errorResponse ) const
 {
     // If the fabric service is unavailable, remove from the service registry
     if( errorResponse->getErrorCode() == FABRICSERVICEUNAVAILABLE )
@@ -224,8 +224,24 @@ bool ServiceLookupHandler::handleErrorResponse(
         const char* serviceId = errorResponse->getDestinationServiceId();
         if( serviceId && ( strlen( serviceId ) > 0 ) )
         {
-            // Unregister the service
-            ServiceRegistry::getInstance().unregisterService( serviceId );
+            serviceRegistrationPtr_t service =
+                ServiceRegistry::getInstance().findService( serviceId );
+            if( service.get() )
+            {
+                if( context->isSourceBridge() ||
+                    ( context->getContextFlags() & DXL_FLAG_LOCAL ) ||
+                    ( service->getClientGuid() == context->getCanonicalSourceId() ) ||
+                    ( service->getClientInstanceGuid() == context->getSourceId() ) )
+                {
+                    // Unregister the service
+                    ServiceRegistry::getInstance().unregisterService( serviceId );
+                }
+                else if( SL_LOG.isWarnEnabled() )
+                {
+                    SL_START << "Ignoring unauthorized FABRICSERVICEUNAVAILABLE for service "
+                        << serviceId << " from client " << context->getSourceId() << SL_WARN_END;
+                }
+            }
         }
     }
 
