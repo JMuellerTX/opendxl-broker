@@ -322,6 +322,20 @@ static int client_certificate_verify(int preverify_ok, X509_STORE_CTX *ctx)
 }
 // DXL End
 
+static void _close_listener_sockets(struct _mqtt3_listener *listener)
+{
+    int i;
+    if(!listener || !listener->socks) return;
+    for(i = 0; i < listener->sock_count; i++){
+        if(listener->socks[i] != INVALID_SOCKET){
+            COMPAT_CLOSE(listener->socks[i]);
+        }
+    }
+    _mosquitto_free(listener->socks);
+    listener->socks = NULL;
+    listener->sock_count = 0;
+}
+
 /* Creates a socket and listens on port 'port'.
  * Returns 1 on failure
  * Returns 0 on success.
@@ -384,6 +398,7 @@ int mqtt3_socket_listen(struct _mqtt3_listener *listener)
         listener->socks = (int *)_mosquitto_realloc(listener->socks, sizeof(int)*listener->sock_count);
         if(!listener->socks){
             _mosquitto_log_printf(NULL, MOSQ_LOG_ERR, "Error: Out of memory.");
+            freeaddrinfo(ainfo);
             return MOSQ_ERR_NOMEM;
         }
         listener->socks[listener->sock_count-1] = sock;
@@ -394,20 +409,24 @@ int mqtt3_socket_listen(struct _mqtt3_listener *listener)
         setsockopt(sock, IPPROTO_IPV6, IPV6_V6ONLY, &ss_opt, sizeof(ss_opt));
 
         if(_mosquitto_socket_nonblock(sock)){
+            freeaddrinfo(ainfo);
+            _close_listener_sockets(listener);
             return 1;
         }
 
         if(bind(sock, rp->ai_addr, (int)rp->ai_addrlen) == -1){
             // g++ compiler automatically defines _GNU_SOURCE
             _mosquitto_log_printf(NULL, MOSQ_LOG_ERR, "Error: %s", strerror_r(errno, buf, 256));
-            COMPAT_CLOSE(sock);
+            freeaddrinfo(ainfo);
+            _close_listener_sockets(listener);
             return 1;
         }
 
         if(listen(sock, 100) == -1){
             // g++ compiler automatically defines _GNU_SOURCE
             _mosquitto_log_printf(NULL, MOSQ_LOG_ERR, "Error: %s", strerror_r(errno, buf, 256));
-            COMPAT_CLOSE(sock);
+            freeaddrinfo(ainfo);
+            _close_listener_sockets(listener);
             return 1;
         }
     }
@@ -423,7 +442,7 @@ int mqtt3_socket_listen(struct _mqtt3_listener *listener)
             listener->ssl_ctx = SSL_CTX_new(TLS_server_method());
             if(!listener->ssl_ctx){
                 _mosquitto_log_printf(NULL, MOSQ_LOG_ERR, "Error: Unable to create TLS context.");
-                COMPAT_CLOSE(sock);
+                _close_listener_sockets(listener);
                 return 1;
             }
 
@@ -453,7 +472,7 @@ int mqtt3_socket_listen(struct _mqtt3_listener *listener)
                 }else{
                     _mosquitto_log_printf(NULL, MOSQ_LOG_ERR,
                         "Error: Protocol %s not supported.", listener->tls_version);
-                    COMPAT_CLOSE(sock);
+                    _close_listener_sockets(listener);
                     return 1;
                 }
             }
@@ -461,7 +480,7 @@ int mqtt3_socket_listen(struct _mqtt3_listener *listener)
                 || !SSL_CTX_set_max_proto_version(listener->ssl_ctx, tls_max_version)){
                 _mosquitto_log_printf(NULL, MOSQ_LOG_ERR,
                     "Error: Unable to set the TLS protocol version range.");
-                COMPAT_CLOSE(sock);
+                _close_listener_sockets(listener);
                 return 1;
             }
 
@@ -493,6 +512,7 @@ int mqtt3_socket_listen(struct _mqtt3_listener *listener)
             ecdh = EC_KEY_new_by_curve_name(NID_X9_62_prime256v1);
             if(!ecdh){
                 _mosquitto_log_printf(NULL, MOSQ_LOG_ERR, "Error: Unable to create TLS ECDH curve.");
+                _close_listener_sockets(listener);
                 return 1;
             }
             SSL_CTX_set_tmp_ecdh(listener->ssl_ctx, ecdh);
@@ -513,7 +533,7 @@ int mqtt3_socket_listen(struct _mqtt3_listener *listener)
                 if(rc == 0){
                     _mosquitto_log_printf(NULL, MOSQ_LOG_ERR,
                         "Error: Unable to set TLS ciphers. Check cipher list \"%s\".", listener->ciphers);
-                    COMPAT_CLOSE(sock);
+                    _close_listener_sockets(listener);
                     return 1;
                 }
             }else{
@@ -521,7 +541,7 @@ int mqtt3_socket_listen(struct _mqtt3_listener *listener)
                 if(rc == 0){
                     _mosquitto_log_printf(NULL, MOSQ_LOG_ERR,
                         "Error: Unable to set TLS ciphers. Check cipher list \"%s\".", listener->ciphers);
-                    COMPAT_CLOSE(sock);
+                    _close_listener_sockets(listener);
                     return 1;
                 }
             }
@@ -538,7 +558,7 @@ int mqtt3_socket_listen(struct _mqtt3_listener *listener)
                     _mosquitto_log_printf(NULL, MOSQ_LOG_ERR,
                         "Error: Unable to load CA certificates. Check capath \"%s\".", listener->capath);
                 }
-                COMPAT_CLOSE(sock);
+                _close_listener_sockets(listener);
                 return 1;
             }
             /* FIXME user data? */
@@ -552,20 +572,20 @@ int mqtt3_socket_listen(struct _mqtt3_listener *listener)
             if(rc != 1){
                 _mosquitto_log_printf(NULL, MOSQ_LOG_ERR,
                     "Error: Unable to load server certificate \"%s\". Check certfile.", listener->certfile);
-                COMPAT_CLOSE(sock);
+                _close_listener_sockets(listener);
                 return 1;
             }
             rc = SSL_CTX_use_PrivateKey_file(listener->ssl_ctx, listener->keyfile, SSL_FILETYPE_PEM);
             if(rc != 1){
                 _mosquitto_log_printf(NULL, MOSQ_LOG_ERR,
                     "Error: Unable to load server key file \"%s\" (%d). Check keyfile.", listener->keyfile, rc);
-                COMPAT_CLOSE(sock);
+                _close_listener_sockets(listener);
                 return 1;
             }
             rc = SSL_CTX_check_private_key(listener->ssl_ctx);
             if(rc != 1){
                 _mosquitto_log_printf(NULL, MOSQ_LOG_ERR, "Error: Server certificate/key are inconsistent.");
-                COMPAT_CLOSE(sock);
+                _close_listener_sockets(listener);
                 return 1;
             }
             /* Load CRLs if they exist. */
@@ -573,7 +593,7 @@ int mqtt3_socket_listen(struct _mqtt3_listener *listener)
                 store = SSL_CTX_get_cert_store(listener->ssl_ctx);
                 if(!store){
                     _mosquitto_log_printf(NULL, MOSQ_LOG_ERR, "Error: Unable to obtain TLS store.");
-                    COMPAT_CLOSE(sock);
+                    _close_listener_sockets(listener);
                     return 1;
                 }
                 lookup = X509_STORE_add_lookup(store, X509_LOOKUP_file());
@@ -581,7 +601,7 @@ int mqtt3_socket_listen(struct _mqtt3_listener *listener)
                 if(rc != 1){
                     _mosquitto_log_printf(NULL, MOSQ_LOG_ERR,
                         "Error: Unable to load certificate revocation file \"%s\". Check crlfile.", listener->crlfile);
-                    COMPAT_CLOSE(sock);
+                    _close_listener_sockets(listener);
                     return 1;
                 }
                 X509_STORE_set_flags(store, X509_V_FLAG_CRL_CHECK);

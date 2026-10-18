@@ -90,11 +90,11 @@ if [ ! -d $DVOL_POLICY_DIR ]; then
     echo "Creating policy directory..."
     mkdir -p $DVOL_POLICY_DIR || { fail 'Error creating policy directory.'; }
 fi
-if [ ! -d DVOL_KEYSTORE_DIR ]; then
+if [ ! -d $DVOL_KEYSTORE_DIR ]; then
     echo "Creating keystore directory..."
     mkdir -p $DVOL_KEYSTORE_DIR || { fail 'Error creating keystore directory.'; }
 fi
-if [ ! -d DVOL_LOGS_DIR ]; then
+if [ ! -d $DVOL_LOGS_DIR ]; then
     echo "Creating logs directory..."
     mkdir -p $DVOL_LOGS_DIR || { fail 'Error creating logs directory.'; }
 fi
@@ -122,7 +122,7 @@ if [ ! -f $DVOL_CONSOLE_CLIENT_CONFIG_FILE ]; then
     cp $DXLBROKER_CONSOLE_CLIENT_CONFIG_FILE $DVOL_CONSOLE_CLIENT_CONFIG_FILE \
         || { fail 'Error copying console client configuration file.'; }
 fi
-if [ ! -f DVOL_CONSOLE_LOGGING_FILE ]; then
+if [ ! -f $DVOL_CONSOLE_LOGGING_FILE ]; then
     cp $DXLBROKER_CONSOLE_LOGGING_FILE $DVOL_CONSOLE_LOGGING_FILE \
         || { fail 'Error copying console logging configuration file.'; }
 fi
